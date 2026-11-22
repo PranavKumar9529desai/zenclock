@@ -13,9 +13,10 @@ Item {
   property var shell: null
   property var manifest: null
   property bool opened: false
-  property string mode: "clock" // "clock" | "pomodoro"; Timer / Stopwatch come later
+  property string mode: "clock" // "clock" | "pomodoro" | "timer" | "stopwatch"
   // Owner-controlled seam: when Zen Inactivity lands, it binds this to its
-  // zenActive state so Pomodoro's secondary HUD fades with the clock HUD.
+  // zenActive state so every mode's secondary HUD fades, leaving only the
+  // primary digits visible.
   property bool hudFaded: false
 
   // Clock state. The clock stays live while hidden so re-summoning never
@@ -26,9 +27,12 @@ Item {
   property string zoneAbbr: ""
   property var targetScreen: Quickshell.screens[0] || null
 
-  // Always-loaded Pomodoro state machine: its deadline timer keeps advancing
-  // while the overlay is dismissed (manifest keepLoaded: true).
+  // Always-loaded state machines: their deadline timers keep advancing while
+  // the overlay is dismissed (manifest keepLoaded: true), so a countdown still
+  // chimes and a stopwatch stays accurate in the background.
   PomodoroEngine { id: pomodoroEngine }
+  TimerEngine { id: timerEngine }
+  StopwatchEngine { id: stopwatchEngine }
 
   Commons.Translations {
     id: strings
@@ -80,8 +84,12 @@ Item {
   }
 
   function setMode(nextMode) {
-    if (nextMode !== "clock" && nextMode !== "pomodoro") return
+    if (nextMode !== "clock" && nextMode !== "pomodoro"
+      && nextMode !== "timer" && nextMode !== "stopwatch") return
     root.mode = nextMode
+    // A pill click should leave Space / R / 1-4 live, even after the Timer
+    // view's custom-minutes field had focus.
+    keyCatcher.forceActiveFocus()
   }
 
   function state() {
@@ -97,6 +105,20 @@ Item {
         session: pomodoroEngine.sessionNumber,
         running: pomodoroEngine.running,
         cycleHalted: pomodoroEngine.cycleHalted
+      } : null,
+      timer: root.mode === "timer" ? {
+        remaining: timerEngine.formattedTime,
+        remainingSeconds: timerEngine.remainingSeconds,
+        running: timerEngine.running,
+        duration: timerEngine.durationMinutes,
+        custom: timerEngine.customActive
+      } : null,
+      stopwatch: root.mode === "stopwatch" ? {
+        elapsed: stopwatchEngine.formattedTime,
+        elapsedSeconds: stopwatchEngine.elapsedSeconds,
+        elapsedMilliseconds: stopwatchEngine.elapsedMs,
+        duration: stopwatchEngine.elapsedSeconds,
+        running: stopwatchEngine.running
       } : null
     })
   }
@@ -167,10 +189,17 @@ Item {
       focus: true
 
       Keys.onPressed: function(event) {
+        // Dismiss always wins, even while typing a custom duration.
         if (event.key === Qt.Key_Escape) {
           root.dismiss()
           event.accepted = true
-        } else if (event.key === Qt.Key_T) {
+          return
+        }
+        // While the custom-minutes field has focus it owns its keystrokes, so
+        // typing digits never switches modes or toggles the countdown.
+        if (root.mode === "timer" && timerView.textEntryActive) return
+
+        if (event.key === Qt.Key_T) {
           root.toggleFormat()
           event.accepted = true
         } else if (event.key === Qt.Key_1) {
@@ -179,11 +208,29 @@ Item {
         } else if (event.key === Qt.Key_2) {
           root.setMode("pomodoro")
           event.accepted = true
+        } else if (event.key === Qt.Key_3) {
+          root.setMode("timer")
+          event.accepted = true
+        } else if (event.key === Qt.Key_4) {
+          root.setMode("stopwatch")
+          event.accepted = true
         } else if (root.mode === "pomodoro" && event.key === Qt.Key_Space) {
           pomodoroEngine.toggle()
           event.accepted = true
         } else if (root.mode === "pomodoro" && event.key === Qt.Key_R) {
           pomodoroEngine.reset()
+          event.accepted = true
+        } else if (root.mode === "timer" && event.key === Qt.Key_Space) {
+          timerEngine.toggle()
+          event.accepted = true
+        } else if (root.mode === "timer" && event.key === Qt.Key_R) {
+          timerEngine.reset()
+          event.accepted = true
+        } else if (root.mode === "stopwatch" && event.key === Qt.Key_Space) {
+          stopwatchEngine.toggle()
+          event.accepted = true
+        } else if (root.mode === "stopwatch" && event.key === Qt.Key_R) {
+          stopwatchEngine.reset()
           event.accepted = true
         }
       }
@@ -215,8 +262,8 @@ Item {
           }
         }
 
-        // Floating mode selector. Timer (3) and Stopwatch (4) are reserved
-        // for a later ticket: shown dimmed with no click handler.
+        // Floating mode selector: Clock (1), Pomodoro (2), Timer (3),
+        // Stopwatch (4).
         Row {
           anchors { top: parent.top; horizontalCenter: parent.horizontalCenter; topMargin: 34 }
           spacing: 10
@@ -290,13 +337,18 @@ Item {
           }
 
           Rectangle {
-            opacity: 0.35
+            id: timerPill
+            property bool hovered: false
             radius: 999
-            color: "#141419"
-            border.color: "#2a2a34"
+            color: root.mode === "timer" ? "#1b2a33" : (timerPill.hovered ? "#1e1e26" : "#141419")
+            border.color: root.mode === "timer" ? "#7dd3fc" : "#2a2a34"
             border.width: 1
             implicitWidth: timerPillLabel.implicitWidth + 32
             implicitHeight: timerPillLabel.implicitHeight + 14
+
+            Behavior on color {
+              ColorAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic }
+            }
 
             PlainText {
               id: timerPillLabel
@@ -305,18 +357,32 @@ Item {
               font.pixelSize: 13
               font.letterSpacing: 2
               font.family: Style.font.family
-              color: "#8a8a96"
+              color: root.mode === "timer" ? "#7dd3fc" : "#8a8a96"
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onEntered: timerPill.hovered = true
+              onExited: timerPill.hovered = false
+              onClicked: root.setMode("timer")
             }
           }
 
           Rectangle {
-            opacity: 0.35
+            id: stopwatchPill
+            property bool hovered: false
             radius: 999
-            color: "#141419"
-            border.color: "#2a2a34"
+            color: root.mode === "stopwatch" ? "#1b2a33" : (stopwatchPill.hovered ? "#1e1e26" : "#141419")
+            border.color: root.mode === "stopwatch" ? "#7dd3fc" : "#2a2a34"
             border.width: 1
             implicitWidth: stopwatchPillLabel.implicitWidth + 32
             implicitHeight: stopwatchPillLabel.implicitHeight + 14
+
+            Behavior on color {
+              ColorAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic }
+            }
 
             PlainText {
               id: stopwatchPillLabel
@@ -325,7 +391,16 @@ Item {
               font.pixelSize: 13
               font.letterSpacing: 2
               font.family: Style.font.family
-              color: "#8a8a96"
+              color: root.mode === "stopwatch" ? "#7dd3fc" : "#8a8a96"
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onEntered: stopwatchPill.hovered = true
+              onExited: stopwatchPill.hovered = false
+              onClicked: root.setMode("stopwatch")
             }
           }
         }
@@ -452,6 +527,22 @@ Item {
         visible: root.mode === "pomodoro"
         anchors.fill: parent
         engine: pomodoroEngine
+        hudFaded: root.hudFaded
+      }
+
+      TimerView {
+        id: timerView
+        visible: root.mode === "timer"
+        anchors.fill: parent
+        engine: timerEngine
+        hudFaded: root.hudFaded
+        onFocusRestored: keyCatcher.forceActiveFocus()
+      }
+
+      StopwatchView {
+        visible: root.mode === "stopwatch"
+        anchors.fill: parent
+        engine: stopwatchEngine
         hudFaded: root.hudFaded
       }
     }
