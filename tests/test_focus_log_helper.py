@@ -12,6 +12,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 HELPER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -141,6 +142,95 @@ class FocusLogHelperTest(unittest.TestCase):
         self.assertEqual(responses[0]["status"], "degraded")
         self.assertTrue(responses[0]["error"])
         self.assertTrue(responses[1]["ok"], "helper must survive an unwritable path")
+
+    def test_prune_removes_only_old_records_and_keeps_the_checkpoint(self):
+        """Manual prune deletes only records past record_retention_days.
+
+        A months-old checkpoint must survive: a paused Focus Session stays
+        resumable (focus-log-schema.md, ADR 0003).
+        """
+        self.init()
+        now_s = int(time.time())
+        retention_days = 30
+        old_ms = (now_s - 40 * 86400) * 1000
+        fresh_ms = (now_s - 1 * 86400) * 1000
+        checkpoint_ms = (now_s - 400 * 86400) * 1000
+
+        # Seed the published artifact directly: one old and one fresh record
+        # of each kind, plus a checkpoint older than any retention value.
+        conn = sqlite3.connect(self.db)
+        try:
+            with conn:
+                conn.execute(
+                    "UPDATE focus_log_policy SET value = ? WHERE key = 'record_retention_days'",
+                    (retention_days,))
+                conn.execute(
+                    "INSERT INTO focus_record (id, duration_minutes, recorded_at) "
+                    "VALUES (?, ?, ?), (?, ?, ?)",
+                    ("old-focus", 25, old_ms, "fresh-focus", 25, fresh_ms))
+                conn.execute(
+                    "INSERT INTO cycle_record (id, recorded_at) VALUES (?, ?), (?, ?)",
+                    ("old-cycle", old_ms, "fresh-cycle", fresh_ms))
+                conn.execute(
+                    "INSERT INTO countdown_record (id, duration_minutes, recorded_at) "
+                    "VALUES (?, ?, ?), (?, ?, ?)",
+                    ("old-countdown", 5, old_ms, "fresh-countdown", 5, fresh_ms))
+                conn.execute(
+                    "INSERT INTO checkpoint (singleton, phase, remaining_seconds, "
+                    "session_number, completed_focus_sessions, saved_at) "
+                    "VALUES (1, 'focus', 600, 2, 1, ?)",
+                    (checkpoint_ms,))
+        finally:
+            conn.close()
+
+        response = run_helper([{"op": "prune", "path": self.db}])[0]
+        self.assertTrue(response["ok"], response)
+        self.assertEqual(response["op"], "prune")
+
+        conn = sqlite3.connect(self.db)
+        try:
+            for table, kind in (("focus_record", "focus"), ("cycle_record", "cycle"),
+                                ("countdown_record", "countdown")):
+                ids = [row[0] for row in conn.execute("SELECT id FROM " + table)]
+                self.assertEqual(ids, ["fresh-" + kind], table)
+            self.assertEqual(
+                conn.execute("SELECT saved_at FROM checkpoint").fetchall(),
+                [(checkpoint_ms,)])
+            policy = dict(conn.execute(
+                "SELECT key, value FROM focus_log_policy").fetchall())
+            self.assertEqual(policy["record_retention_days"], retention_days)
+            self.assertEqual(policy["checkpoint_ttl_days"], 0)
+        finally:
+            conn.close()
+
+    def test_prune_with_default_keep_forever_policy_deletes_nothing(self):
+        """Both policy values default to 0 (keep forever); prune is a no-op."""
+        self.init()
+        ancient_ms = 1_000_000_000_000  # 2001 — older than any real retention
+        conn = sqlite3.connect(self.db)
+        try:
+            with conn:
+                conn.execute(
+                    "INSERT INTO focus_record (id, duration_minutes, recorded_at) "
+                    "VALUES ('ancient-focus', 25, ?)", (ancient_ms,))
+        finally:
+            conn.close()
+
+        response = run_helper([{"op": "prune", "path": self.db}])[0]
+        self.assertTrue(response["ok"], response)
+        self.assertEqual(response["deleted"], {
+            "focus_record": 0, "cycle_record": 0, "countdown_record": 0})
+
+        conn = sqlite3.connect(self.db)
+        try:
+            ids = conn.execute("SELECT id FROM focus_record").fetchall()
+            policy = dict(conn.execute(
+                "SELECT key, value FROM focus_log_policy").fetchall())
+        finally:
+            conn.close()
+        self.assertEqual(ids, [("ancient-focus",)])
+        self.assertEqual(policy, {"checkpoint_ttl_days": 0,
+                                  "record_retention_days": 0})
 
     def test_failed_command_reports_degraded_status_with_a_reason(self):
         # A missing path stands in for a helper that cannot open storage at all.

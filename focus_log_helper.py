@@ -56,6 +56,11 @@ COUNT_TABLES = {
     "countdown": "countdown_record",
 }
 
+# The three public record kinds are the only things a prune may delete. The
+# checkpoint is deliberately absent: a paused Focus Session must stay resumable
+# no matter how old it is (ADR 0003).
+RECORD_TABLES = tuple(COUNT_TABLES.values())
+
 
 def now_ms():
     return int(time.time() * 1000)
@@ -91,6 +96,28 @@ def ensure_schema(conn):
                 "INSERT OR IGNORE INTO focus_log_policy (key, value) VALUES (?, 0)",
                 (key,),
             )
+
+
+def prune(conn):
+    """Delete only records older than the configured record retention.
+
+    Pruning is an explicit operation, never automatic, and it never deletes
+    the checkpoint: the default checkpoint policy is keep forever, so a
+    months-old resumable session must survive a cleanup of old records.
+    """
+    row = conn.execute(
+        "SELECT value FROM focus_log_policy WHERE key = 'record_retention_days'"
+    ).fetchone()
+    retention_days = row[0] if row else 0
+    deleted = {table: 0 for table in RECORD_TABLES}
+    if retention_days > 0:
+        cutoff = now_ms() - retention_days * 86400 * 1000
+        with conn:
+            for table in RECORD_TABLES:
+                cursor = conn.execute(
+                    "DELETE FROM " + table + " WHERE recorded_at < ?", (cutoff,))
+                deleted[table] = cursor.rowcount
+    return deleted
 
 
 def status_for(conn, path):
@@ -136,6 +163,10 @@ def handle(command):
             response["inserted"] = 1 if inserted > 0 else 0
         elif op == "status":
             response = status_for(conn, path)
+        elif op == "prune":
+            deleted = prune(conn)
+            response = status_for(conn, path)
+            response["deleted"] = deleted
         else:
             return degraded(op, "unknown op")
 
