@@ -166,6 +166,17 @@ Item {
         elapsedSeconds: root.service.stopwatchEngine.elapsedSeconds,
         elapsedMilliseconds: root.service.stopwatchEngine.elapsedMs,
         running: root.service.stopwatchEngine.running
+      } : null,
+      focusLog: root.service && root.service.focusLog ? {
+        path: root.service.focusLog.dbPath,
+        schemaVersion: root.service.focusLog.schemaVersion,
+        status: root.service.focusLog.status,
+        journalMode: root.service.focusLog.journalMode,
+        counts: {
+          focus: root.service.focusLog.focusRecordCount,
+          cycle: root.service.focusLog.cycleRecordCount,
+          countdown: root.service.focusLog.countdownRecordCount
+        }
       } : null
     })
   }
