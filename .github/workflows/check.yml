@@ -1,0 +1,15 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  portable-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run portable checks
+        env:
+          CHECK_PORTABLE: "1"
+        run: bash scripts/check.sh
