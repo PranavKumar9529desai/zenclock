@@ -50,7 +50,7 @@ A single completed Pomodoro Cycle as it appears in the Focus Log.
 _Avoid_: Cycle event, round, set
 
 ### Zen Inactivity
-A clean presentation state entered after 3 seconds of user inactivity where HUD navigation, action buttons, and cursor fade away, leaving only primary time digits visible.
+A clean presentation state entered after an 8-second open grace period followed by 3 seconds of user inactivity, where HUD navigation, action buttons, and cursor fade away, leaving only primary time digits visible. Input immediately restores the HUD; a click on a faded control only reveals it.
 
 _Avoid_: Sleep mode, screensaver, dark mode
 

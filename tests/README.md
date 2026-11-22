@@ -12,9 +12,9 @@ tests/smoke.sh ──▶ tests/adapter.sh ──▶ omarchy-shell shell call pra
 ```
 
 `state()` reports externally visible state only — `opened`, `format`, `time`,
-`timezone`, and, when later tickets are loaded, `zenActive`, `mode`, and
-`pomodoro`. No test reaches into the QML visual tree, so HUD restyling cannot
-break them.
+`timezone`, `screen`, `cueAvailable`, `serviceReady`, `zenActive`, `hudOpacity`,
+`mode`, and per-mode objects (`pomodoro`, `timer`, `stopwatch`). No test reaches
+into the QML visual tree, so HUD restyling cannot break them.
 
 ## Interface exposed by `adapter.sh`
 
@@ -25,7 +25,9 @@ break them.
 | `zc_has_field <name>` | Feature detection (base plugin vs integrated build) |
 | `zc_toggle` / `zc_hide` | Summon / dismiss through the shell |
 | `zc_call <method> [arg]` | Invoke a plugin method |
-| `zc_key <wtype-key>` | Send a real keystroke |
+| `zc_key <wtype-key>` | Send a real keystroke (only while overlay is open) |
+| `zc_press <wtype-key>` | Ensure the overlay is open, then send a key |
+| `zc_events` | Unescaped JSON of captured test events |
 | `zc_wait_field <filter> <value> [attempts]` | Poll until state settles |
 | `zc_wait_changed <filter> <previous> [attempts]` | Poll until a clock/timer advances |
 | `zc_assert_eq` / `zc_assert_contains` | Assertions |

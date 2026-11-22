@@ -67,7 +67,7 @@ Item {
 
   // Test seams: drive deadline machines without waiting through a long cycle.
   function debugResetAll() {
-    pomodoro.reset()
+    pomodoro.resetAll()
     countdown.setPreset(5)
     stopwatch.reset()
     root.debugEvents = []

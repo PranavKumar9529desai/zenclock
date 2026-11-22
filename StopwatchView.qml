@@ -10,6 +10,7 @@ Item {
 
   required property var engine
   property bool hudFaded: false
+  property bool actionLocked: false
 
   // Raised on any pointer interaction so the owner can wake Zen Inactivity.
   signal activity()
@@ -92,6 +93,7 @@ Item {
       HudButton {
         accent: true
         faded: root.hudFaded
+        locked: root.actionLocked
         label: strings.t("stopwatch.controls.primary").arg(root.playGlyph).arg(root.actionLabel)
         onActivity: root.activity()
         onClicked: root.engine.toggle()
@@ -99,6 +101,7 @@ Item {
 
       HudButton {
         faded: root.hudFaded
+        locked: root.actionLocked
         label: strings.t("stopwatch.controls.primary").arg("󰑐").arg(strings.t("stopwatch.action.reset"))
         onActivity: root.activity()
         onClicked: root.engine.reset()

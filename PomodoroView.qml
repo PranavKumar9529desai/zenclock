@@ -10,6 +10,7 @@ Item {
 
   required property var engine
   property bool hudFaded: false
+  property bool actionLocked: false
 
   // Raised on any pointer interaction so the owner can wake Zen Inactivity.
   signal activity()
@@ -34,7 +35,8 @@ Item {
   readonly property string actionLabel: {
     if (root.engine.cycleHalted) return strings.t("pomodoro.action.newCycle")
     if (root.engine.running) return strings.t("pomodoro.action.pause")
-    return root.engine.remainingSeconds < root.engine.focusMinutes * 60
+    return root.engine.remainingSeconds
+      < root.engine.durationForPhase(root.engine.phase) * 60
       ? strings.t("pomodoro.action.resume")
       : strings.t("pomodoro.action.play")
   }
@@ -150,6 +152,7 @@ Item {
       HudButton {
         accent: true
         faded: root.hudFaded
+        locked: root.actionLocked
         label: strings.t("pomodoro.controls.primary").arg(root.playGlyph).arg(root.actionLabel)
         onActivity: root.activity()
         onClicked: root.engine.toggle()
@@ -157,6 +160,7 @@ Item {
 
       HudButton {
         faded: root.hudFaded
+        locked: root.actionLocked
         label: strings.t("pomodoro.controls.primary").arg("󰑐").arg(strings.t("pomodoro.action.reset"))
         onActivity: root.activity()
         onClicked: root.engine.reset()
@@ -164,6 +168,7 @@ Item {
 
       HudButton {
         faded: root.hudFaded
+        locked: root.actionLocked
         interactive: root.engine.canSkip
         label: strings.t("pomodoro.controls.primary").arg("󰒭").arg(strings.t("pomodoro.action.skip"))
         onActivity: root.activity()

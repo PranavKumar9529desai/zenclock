@@ -17,6 +17,9 @@ Item {
   property bool opened: false
   property bool openRequested: false
   property string mode: "clock" // "clock" | "pomodoro" | "timer" | "stopwatch"
+  // Actions are suppressed while Zen is active and briefly after waking, so
+  // revealing the HUD never silently triggers the control underneath.
+  readonly property bool actionLocked: inactivity.zenActive || inactivity.justWoke
   property bool cueAvailable: true
 
   // Clock state. The clock stays live while hidden so re-summoning never
@@ -230,7 +233,8 @@ Item {
       }
     }
     // hyprctl may be unavailable; still show the overlay on the fallback screen.
-    onExited: root.finishOpen()
+    // Let a pending onStreamFinished apply the focused screen before mapping.
+    onExited: Qt.callLater(root.finishOpen)
   }
 
   PanelWindow {
@@ -322,7 +326,10 @@ Item {
             inactivity.wake()
           }
         }
-        onPressed: inactivity.wake()
+        onPressed: {
+          inactivity.wake()
+          keyCatcher.forceActiveFocus()
+        }
         onReleased: inactivity.wake()
         onClicked: inactivity.wake()
         onWheel: inactivity.wake()
@@ -414,7 +421,7 @@ Item {
                 onExited: pill.hovered = false
                 onClicked: {
                   // First click on a faded HUD only reveals it.
-                  if (inactivity.zenActive) {
+                  if (root.actionLocked) {
                     inactivity.wake()
                     return
                   }
@@ -449,6 +456,7 @@ Item {
             hoverEnabled: true
             cursorShape: inactivity.zenActive ? Qt.BlankCursor : Qt.ArrowCursor
             onEntered: inactivity.wake()
+            onPressed: keyCatcher.forceActiveFocus()
             onClicked: inactivity.wake()
           }
         }
@@ -548,8 +556,9 @@ Item {
         MouseArea {
           anchors.fill: parent
           cursorShape: inactivity.zenActive ? Qt.BlankCursor : Qt.PointingHandCursor
+          onPressed: keyCatcher.forceActiveFocus()
           onClicked: {
-            if (inactivity.zenActive) {
+            if (root.actionLocked) {
               inactivity.wake()
               return
             }
@@ -567,6 +576,7 @@ Item {
             anchors.fill: parent
             engine: root.service.pomodoroEngine
             hudFaded: inactivity.zenActive
+            actionLocked: root.actionLocked
             onActivity: inactivity.wake()
           }
         }
@@ -582,6 +592,7 @@ Item {
             anchors.fill: parent
             engine: root.service.timerEngine
             hudFaded: inactivity.zenActive
+            actionLocked: root.actionLocked
             onActivity: inactivity.wake()
             onFocusRestored: keyCatcher.forceActiveFocus()
           }
@@ -597,6 +608,7 @@ Item {
             anchors.fill: parent
             engine: root.service.stopwatchEngine
             hudFaded: inactivity.zenActive
+            actionLocked: root.actionLocked
             onActivity: inactivity.wake()
           }
         }

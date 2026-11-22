@@ -1,6 +1,6 @@
 # 3. Focus Log persists in a client-local SQLite database with resumable Focus Sessions
 
-Status: accepted
+Status: accepted — design only; no Focus Log adapter is implemented yet.
 
 V2 persists the Focus Log in a client-local SQLite database at
 `Quickshell.statePath("zenclock/focus-log.sqlite3")`. A single root-level
