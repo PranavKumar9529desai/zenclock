@@ -6,6 +6,7 @@ the published artifact (the SQLite file) with an independent sqlite3 client.
 They do not inspect helper internals.
 """
 
+import datetime
 import json
 import os
 import sqlite3
@@ -14,6 +15,11 @@ import sys
 import tempfile
 import time
 import unittest
+
+# The published queries group by local day. Pin UTC so their day labels are
+# deterministic without changing the SQL under test.
+os.environ["TZ"] = "UTC"
+time.tzset()
 
 HELPER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                       "focus_log_helper.py")
@@ -237,6 +243,156 @@ class FocusLogHelperTest(unittest.TestCase):
         response = run_helper([{"op": "status"}])[0]
         self.assertEqual(response["status"], "degraded")
         self.assertTrue(response["error"])
+    def test_cycle_record_persists_id_and_timestamp(self):
+        self.init()
+        event = {"op": "record_cycle", "path": self.db,
+                 "id": "zc-test-c1", "timestamp": 1730451600000}
+        response = run_helper([event])[0]
+
+        self.assertTrue(response["ok"], response)
+        self.assertEqual(response["inserted"], 1)
+        conn = sqlite3.connect(self.db)
+        try:
+            rows = conn.execute(
+                "SELECT id, recorded_at FROM cycle_record").fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(rows, [("zc-test-c1", 1730451600000)])
+
+    def test_cycle_redelivery_is_idempotent(self):
+        self.init()
+        event = {"op": "record_cycle", "path": self.db,
+                 "id": "zc-test-c1", "timestamp": 1730451600000}
+        responses = run_helper([event, event])
+
+        self.assertEqual([r["inserted"] for r in responses], [1, 0])
+        conn = sqlite3.connect(self.db)
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM cycle_record").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(count, 1)
+
+    def test_countdown_record_uses_deterministic_synthesized_id(self):
+        self.init()
+        event = {"op": "record_countdown", "path": self.db,
+                 "durationMinutes": 5, "timestamp": 1730451600000}
+        response = run_helper([event])[0]
+
+        self.assertTrue(response["ok"], response)
+        self.assertEqual(response["inserted"], 1)
+        conn = sqlite3.connect(self.db)
+        try:
+            rows = conn.execute(
+                "SELECT id, duration_minutes, recorded_at FROM countdown_record"
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(rows, [("zc-cd-1730451600000-5", 5, 1730451600000)])
+
+    def test_countdown_redelivery_is_idempotent(self):
+        self.init()
+        event = {"op": "record_countdown", "path": self.db,
+                 "durationMinutes": 5, "timestamp": 1730451600000}
+        responses = run_helper([event, event])
+
+        self.assertEqual([r["inserted"] for r in responses], [1, 0])
+        conn = sqlite3.connect(self.db)
+        try:
+            rows = conn.execute(
+                "SELECT id, duration_minutes, recorded_at FROM countdown_record"
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(rows, [("zc-cd-1730451600000-5", 5, 1730451600000)])
+
+    def test_distinct_countdowns_get_distinct_synthesized_ids(self):
+        self.init()
+        run_helper([
+            {"op": "record_countdown", "path": self.db,
+             "durationMinutes": 5, "timestamp": 1730451600000},
+            {"op": "record_countdown", "path": self.db,
+             "durationMinutes": 5, "timestamp": 1730473200000},
+        ])
+        conn = sqlite3.connect(self.db)
+        try:
+            ids = [row[0] for row in conn.execute(
+                "SELECT id FROM countdown_record ORDER BY id")]
+        finally:
+            conn.close()
+        self.assertEqual(ids, ["zc-cd-1730451600000-5", "zc-cd-1730473200000-5"])
+
+    def test_countdowns_do_not_inflate_canonical_focus_metric(self):
+        self.init()
+        run_helper([
+            {"op": "record_focus", "path": self.db, "id": "zc-test-f1",
+             "durationMinutes": 25, "timestamp": 1730451600000},
+            {"op": "record_countdown", "path": self.db,
+             "durationMinutes": 5, "timestamp": 1730451600000},
+        ])
+        conn = sqlite3.connect(self.db)
+        try:
+            # Verbatim from docs/focus-log-schema.md, "Canonical metric".
+            minutes = conn.execute(
+                "SELECT SUM(duration_minutes) AS focus_minutes FROM focus_record"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(minutes, 25)
+
+    def test_documented_dashboard_queries_return_documented_results(self):
+        self.init()
+        today_ms = int(time.time() * 1000)
+        today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+        run_helper([
+            {"op": "record_focus", "path": self.db, "id": "zc-test-f1",
+             "durationMinutes": 25, "timestamp": 1730451600000},
+            {"op": "record_focus", "path": self.db, "id": "zc-test-f2",
+             "durationMinutes": 50, "timestamp": 1730473200000},
+            {"op": "record_focus", "path": self.db, "id": "zc-test-f3",
+             "durationMinutes": 25, "timestamp": 1730556000000},
+            {"op": "record_focus", "path": self.db, "id": "zc-test-f4",
+             "durationMinutes": 50, "timestamp": today_ms},
+            {"op": "record_cycle", "path": self.db, "id": "zc-test-c1",
+             "timestamp": 1730451600000},
+            {"op": "record_cycle", "path": self.db, "id": "zc-test-c2",
+             "timestamp": 1730556000000},
+        ])
+
+        conn = sqlite3.connect(self.db)
+        try:
+            # The four example queries, verbatim from the published schema.
+            daily = conn.execute("""
+                SELECT date(recorded_at / 1000, 'unixepoch', 'localtime') AS day,
+                       SUM(duration_minutes) AS minutes,
+                       COUNT(*) AS sessions
+                FROM focus_record
+                GROUP BY day ORDER BY day;
+            """).fetchall()
+            todays = conn.execute("""
+                SELECT COALESCE(SUM(duration_minutes), 0) AS minutes
+                FROM focus_record
+                WHERE date(recorded_at / 1000, 'unixepoch', 'localtime') = date('now','localtime');
+            """).fetchone()[0]
+            cycles = conn.execute("SELECT COUNT(*) FROM cycle_record;").fetchone()[0]
+            longest = conn.execute("""
+                SELECT day, minutes FROM (
+                  SELECT date(recorded_at / 1000, 'unixepoch', 'localtime') AS day,
+                         SUM(duration_minutes) AS minutes
+                  FROM focus_record GROUP BY day
+                ) ORDER BY minutes DESC LIMIT 1;
+            """).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(daily, [
+            ("2024-11-01", 75, 2),
+            ("2024-11-02", 25, 1),
+            (today, 50, 1),
+        ])
+        self.assertEqual(todays, 50)
+        self.assertEqual(cycles, 2)
+        self.assertEqual(longest, ("2024-11-01", 75))
 
 
 if __name__ == "__main__":
