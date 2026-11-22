@@ -61,6 +61,15 @@ def now_ms():
     return int(time.time() * 1000)
 
 
+def degraded(op, reason):
+    """A failed command: no record is written and the adapter stays alive.
+
+    `status` is the observable storage status in the plugin state JSON; `error`
+    carries the human-readable reason that the QML adapter logs.
+    """
+    return {"op": op, "ok": False, "status": "degraded", "error": str(reason)}
+
+
 def connect(path):
     parent = os.path.dirname(os.path.abspath(path))
     os.makedirs(parent, exist_ok=True)
@@ -105,7 +114,7 @@ def handle(command):
     op = command.get("op")
     path = command.get("path")
     if not path:
-        return {"op": op, "ok": False, "error": "missing path"}
+        return degraded(op, "missing path")
 
     conn = None
     try:
@@ -128,12 +137,12 @@ def handle(command):
         elif op == "status":
             response = status_for(conn, path)
         else:
-            return {"op": op, "ok": False, "error": "unknown op"}
+            return degraded(op, "unknown op")
 
         response["op"] = op
         return response
     except Exception as exc:  # keep the helper alive for later commands
-        return {"op": op, "ok": False, "error": str(exc)}
+        return degraded(op, exc)
     finally:
         if conn is not None:
             conn.close()
@@ -147,8 +156,7 @@ def main():
         try:
             command = json.loads(line)
         except ValueError as exc:
-            print(json.dumps({"ok": False, "error": "invalid JSON: " + str(exc)}),
-                  flush=True)
+            print(json.dumps(degraded(None, "invalid JSON: " + str(exc))), flush=True)
             continue
         print(json.dumps(handle(command)), flush=True)
 

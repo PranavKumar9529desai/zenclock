@@ -105,6 +105,49 @@ class FocusLogHelperTest(unittest.TestCase):
         self.assertEqual(status["counts"], {"focus": 1, "cycle": 0, "countdown": 0})
         self.assertEqual(status["journalMode"].lower(), "wal")
 
+    def test_corrupt_database_degrades_to_noop_and_helper_survives(self):
+        self.init()
+        # Corrupt the published artifact directly with non-SQLite bytes.
+        with open(self.db, "wb") as handle:
+            handle.write(b"not a sqlite database\n")
+        fresh = os.path.join(self.tmp.name, "fresh", "focus-log.sqlite3")
+        responses = run_helper([
+            {"op": "record_focus", "path": self.db,
+             "id": "zc-corrupt-f1", "durationMinutes": 25, "timestamp": 1730000000123},
+            {"op": "status", "path": fresh},
+        ])
+
+        failed = responses[0]
+        self.assertFalse(failed["ok"])
+        self.assertEqual(failed["status"], "degraded")
+        self.assertTrue(failed["error"])
+        # A later, healthy command still works: one failure never kills the helper.
+        self.assertTrue(responses[1]["ok"], "helper must survive a storage failure")
+        self.assertEqual(responses[1]["counts"], {"focus": 0, "cycle": 0, "countdown": 0})
+
+    def test_unwritable_database_directory_degrades_without_crashing(self):
+        # A regular file where the database directory should be makes every
+        # filesystem operation on the parent fail.
+        blocker = os.path.join(self.tmp.name, "blocked")
+        with open(blocker, "w") as handle:
+            handle.write("x")
+        blocked_db = os.path.join(blocker, "focus-log.sqlite3")
+        responses = run_helper([
+            {"op": "init", "path": blocked_db},
+            {"op": "status", "path": self.db},
+        ])
+
+        self.assertFalse(responses[0]["ok"])
+        self.assertEqual(responses[0]["status"], "degraded")
+        self.assertTrue(responses[0]["error"])
+        self.assertTrue(responses[1]["ok"], "helper must survive an unwritable path")
+
+    def test_failed_command_reports_degraded_status_with_a_reason(self):
+        # A missing path stands in for a helper that cannot open storage at all.
+        response = run_helper([{"op": "status"}])[0]
+        self.assertEqual(response["status"], "degraded")
+        self.assertTrue(response["error"])
+
 
 if __name__ == "__main__":
     unittest.main()
