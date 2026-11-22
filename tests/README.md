@@ -37,26 +37,50 @@ mid-run from the desktop. Teardown uses IPC `hide`, never synthetic keys.
 
 ## Test-only plugin seams
 
-`state()` also reports `screen`, `cueAvailable` and `serviceReady`. The plugin
-exposes these debug methods through shell IPC, used only by `smoke.sh`:
-`debugResetAll`, `debugAdvancePhase`, `debugSetTimerPreset`,
-`debugSetCustomMinutes`, `debugExpireTimer`, `debugSetEventCapture`,
-`debugEventsJson` and `debugRestoreCheckpoint`. They let the deadline-based
-state machines be driven without waiting through a 100-minute cycle.
-`debugRestoreCheckpoint` re-runs the load path; `checkpoint-resume.sh` observes
-the result through `state()` JSON and the SQLite file, never the visual tree.
+`state()` also reports `screen`, `cueAvailable`, `serviceReady`, and — when the
+Focus Log adapter is loaded — `focusLog` (including its `checkpoint` position:
+phase, remaining seconds, session number, saved-at) and
+`pomodoro.partiallyElapsed` (the "Resume" label derivation). The plugin exposes
+these debug methods through shell IPC. They are used by `smoke.sh`,
+`focus-log.sh`, `focus-log-degraded.sh` and `checkpoint-resume.sh` — not by
+`smoke.sh` alone:
+
+| Method | Used by |
+|---|---|
+| `debugResetAll` | smoke.sh, focus-log.sh, focus-log-degraded.sh, checkpoint-resume.sh |
+| `debugAdvancePhase` | smoke.sh, focus-log.sh, focus-log-degraded.sh, checkpoint-resume.sh |
+| `debugSetTimerPreset` | smoke.sh, focus-log-degraded.sh |
+| `debugSetCustomMinutes` | smoke.sh |
+| `debugExpireTimer` | smoke.sh, focus-log.sh, focus-log-degraded.sh |
+| `debugSetEventCapture` | smoke.sh, focus-log.sh, focus-log-degraded.sh, checkpoint-resume.sh |
+| `debugEventsJson` | adapter.sh (`zc_events`), read by smoke.sh, focus-log.sh, focus-log-degraded.sh, checkpoint-resume.sh |
+| `debugCueCount` | focus-log-degraded.sh |
+| `debugRedeliverFocus` | focus-log.sh, focus-log-degraded.sh |
+| `debugRedeliverCycle` | focus-log.sh |
+| `debugRedeliverCountdown` | focus-log.sh |
+| `debugRestoreCheckpoint` | checkpoint-resume.sh |
+| `debugSelectFocusLogAdapter` | focus-log-degraded.sh |
+
+They let the deadline-based state machines be driven without waiting through a
+100-minute cycle. `debugRestoreCheckpoint` re-runs the load path;
+`checkpoint-resume.sh` observes the result through `state()` JSON and the
+SQLite file, never the visual tree.
 
 `debugSetEventCapture` enables a **test-only** event log. V1 stores no events in
 production: the service simply forwards the engines' signals, so a V2 database
 adapter can connect at that seam. The test adapter reads the captured events
 with `zc_events` and asserts their type and metadata.
 
-`debugSetFocusLogPath` redirects Focus Log writes to an isolated database so the
-degradation test (`tests/focus-log-degraded.sh`) can corrupt storage without
-touching the user's real Focus Log; `debugCueCount` counts requested audio cues
-at the service event seam so the same test can prove cues still fire while
-storage is degraded. A failed write is reported in `state().focusLog.status` as
-`degraded` with the reason in `statusReason`.
+`debugSelectFocusLogAdapter test:<path>` (one IPC string argument) selects the
+test recording adapter at the service seam: its isolated database can be
+corrupted by the degradation test without touching the user's fixed-path Focus
+Log. `production` restores the recording adapter, `noop` selects the explicit
+no-op adapter, and no user-facing setting is added. `debugCueCount` counts
+requested audio cues at the service event seam so the same test can prove cues
+still fire while storage is
+degraded. A failed write is reported in `state().focusLog.status` as
+`degraded` with the reason in `statusReason`; an unrecognized database version
+is likewise degraded and never published as a valid `schemaVersion`.
 
 `state()` also reports `hudOpacity`. The smoke test asserts the HUD is visible
 immediately after open and stays visible through the 8-second grace period;

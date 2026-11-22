@@ -9,10 +9,14 @@ import Quickshell.Io
 Item {
   id: root
 
-  // Mutable only so the degradation smoke test can redirect writes to an
-  // isolated database; production always keeps the documented state path.
+  // Fixed for this adapter's lifetime by the published schema: there is no
+  // setting and no mutator. Tests get isolation by selecting the test adapter
+  // at the Service seam, which constructs its own instance with its own path.
   property string dbPath: Quickshell.statePath("zenclock/focus-log.sqlite3")
-  property int schemaVersion: 1
+  // The only schema version this adapter understands. A database reporting
+  // anything else is degraded, never published as a readable schemaVersion.
+  readonly property int supportedSchemaVersion: 1
+  property int schemaVersion: root.supportedSchemaVersion
 
   property string status: "initializing"
   property string statusReason: ""
@@ -62,7 +66,16 @@ Item {
     root.status = response.status || "ok"
     root.statusReason = ""
     root.journalMode = response.journalMode || ""
-    if (response.version) root.schemaVersion = response.version
+    if (response.version) {
+      if (response.version !== root.supportedSchemaVersion) {
+        var versionReason = "unrecognized Focus Log schema version " + response.version
+        root.status = "degraded"
+        root.statusReason = versionReason
+        console.warn("Focus Log:", versionReason)
+        return
+      }
+      root.schemaVersion = response.version
+    }
     if (response.counts) {
       root.focusRecordCount = response.counts.focus || 0
       root.cycleRecordCount = response.counts.cycle || 0
@@ -123,19 +136,12 @@ Item {
 
   function refresh() { root.send({ op: "status", path: root.dbPath }) }
 
-  // Test-only: point writes at an isolated database so the degradation smoke
-  // test can corrupt storage without ever touching the user's Focus Log.
-  function debugSetDbPath(path) {
-    root.dbPath = path
-    root.status = "initializing"
-    root.statusReason = ""
-    root.send({ op: "init", path: path })
-  }
-
+  // One JSON state payload for the whole adapter, consumed verbatim by
+  // Overlay.state() so state() and the adapter cannot drift apart.
   function stateJson() {
     return JSON.stringify({
       path: root.dbPath,
-      schemaVersion: root.schemaVersion,
+      schemaVersion: root.status === "ok" ? root.schemaVersion : 0,
       status: root.status,
       statusReason: root.statusReason,
       journalMode: root.journalMode,
@@ -143,7 +149,10 @@ Item {
         focus: root.focusRecordCount,
         cycle: root.cycleRecordCount,
         countdown: root.countdownRecordCount
-      }
+      },
+      // Checkpoint position (phase, remaining seconds, session number and
+      // saved-at) is observable state, not a visual-tree detail.
+      checkpoint: root.checkpoint
     })
   }
 

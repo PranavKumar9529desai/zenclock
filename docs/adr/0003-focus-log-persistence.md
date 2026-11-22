@@ -25,11 +25,17 @@ is what lets a session be resumed months later.
 
 ADR 0002 promised that V2 would add a SQLite adapter without touching an engine
 or a view. That holds for the recording path, but restoring a checkpoint needs a
-small `restoreSnapshot(...)` function on `PomodoroEngine.qml`; that clause is
-superseded for checkpoint restore only. No view changes are needed: restoring in
-a paused state with partially elapsed time makes `PomodoroView.qml` show
-"Resume" on its own. No popup, desktop notification, or new UI is introduced —
-the fullscreen HUD's own button is the entire interaction.
+small `restoreSnapshot(...)` function on `PomodoroEngine.qml`, now also passed
+the persisted `session_number` so an edited checkpoint restores the stored cycle
+position; that clause is superseded for checkpoint restore only. The one view
+change in this same exception is a pure label derivation in `PomodoroView.qml`:
+"Resume" applies to a paused, partially elapsed **any** active phase — Focus
+Session, Short Break or Long Break — rather than only a Focus Session, so a
+restored Long Break no longer reads "Play". It adds no new UI, state, or
+interaction. Reset discards the checkpoint synchronously and suppresses
+checkpoint writes until a new phase actually starts, so the asynchronous clear
+response is not load-bearing. No popup, desktop notification, or new UI is
+introduced — the fullscreen HUD's own button is the entire interaction.
 
 Considered options: the `sqlite3` CLI via `Process` was rejected because it
 means hand-escaped SQL and no direct unit tests; a JSON file via `FileView` was

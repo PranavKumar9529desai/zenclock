@@ -16,6 +16,9 @@ import sys
 import time
 
 SCHEMA_VERSION = 1
+# The only version this helper knows how to read. A Focus Log reporting
+# anything else is stopped and reported, never guessed at (schema rule 4).
+SUPPORTED_VERSION = 1
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -142,8 +145,29 @@ def checkpoint_for(conn):
     }
 
 
+def reported_version(conn):
+    """Version already stored in the file, or None before the schema exists."""
+    try:
+        row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+    except sqlite3.Error:
+        return None
+    return row[0] if row else None
+
+
+def unsupported_version_response(conn, op):
+    """Stop before any write when a Focus Log reports a version we cannot read."""
+    version = reported_version(conn)
+    if version is None or version == SUPPORTED_VERSION:
+        return None
+    return degraded(op, "unrecognized Focus Log schema version %s (supported: %s)"
+                    % (version, SUPPORTED_VERSION))
+
+
 def status_for(conn, path):
-    version = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+    unsupported = unsupported_version_response(conn, None)
+    if unsupported is not None:
+        return unsupported
+    version = reported_version(conn)
     journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
     counts = {
         name: conn.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
@@ -169,6 +193,10 @@ def handle(command):
     conn = None
     try:
         conn = connect(path)
+        # Rule 4: an unknown version is reported, never migrated or guessed at.
+        unsupported = unsupported_version_response(conn, op)
+        if unsupported is not None:
+            return unsupported
         ensure_schema(conn)
 
         if op == "init":

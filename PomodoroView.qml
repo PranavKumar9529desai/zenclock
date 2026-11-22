@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import qs.Commons
 import qs.Commons as Commons
+import "timer-policy.js" as TimerPolicy
 
 // Fullscreen Pomodoro view. Purely presentational: all state and transitions
 // live in PomodoroEngine, injected through `engine` by Overlay.qml.
@@ -31,10 +32,18 @@ Item {
     return "#9ab9c9"
   }
 
+  // A restored or paused Short/Long Break is partially elapsed too, so its
+  // primary button reads "Resume" just like a Focus Session. Label only:
+  // no new UI and no change to the engine's transitions.
+  readonly property bool phasePartiallyElapsed: TimerPolicy.isPartiallyElapsed(
+    root.engine.phase, root.engine.remainingSeconds,
+    root.engine.focusMinutes, root.engine.shortBreakMinutes,
+    root.engine.longBreakMinutes)
+
   readonly property string actionLabel: {
     if (root.engine.cycleHalted) return strings.t("pomodoro.action.newCycle")
     if (root.engine.running) return strings.t("pomodoro.action.pause")
-    return root.engine.remainingSeconds < root.engine.focusMinutes * 60
+    return root.phasePartiallyElapsed
       ? strings.t("pomodoro.action.resume")
       : strings.t("pomodoro.action.play")
   }
