@@ -30,6 +30,12 @@ check eq "overlay starts hidden" "$(zc_field '.opened')" "false"
 zc_toggle
 sleep 0.7
 check eq "overlay opens" "$(zc_field '.opened')" "true"
+# Leave an inspectable artifact of the first frame, so "controls visible on
+# open" is reviewable by a human rather than only by a JSON assertion.
+mkdir -p tests/artifacts
+if command -v grim >/dev/null 2>&1; then
+  grim tests/artifacts/overlay-open.png 2>/dev/null || true
+fi
 check eq "service is loaded" "$(zc_field '.serviceReady')" "true"
 check eq "12-hour format by default" "$(zc_field '.format')" "12h"
 check contains "timezone badge is populated" "$(zc_field '.timezone')" "(UTC"
