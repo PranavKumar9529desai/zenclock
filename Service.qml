@@ -12,6 +12,7 @@ Item {
   readonly property alias pomodoroEngine: pomodoro
   readonly property alias timerEngine: countdown
   readonly property alias stopwatchEngine: stopwatch
+  readonly property alias focusLog: focusLog
 
   // V1 forwards events only. V2 connects a concrete database adapter to these
   // signals; there is no sink object and no in-memory analytics store here.
@@ -29,6 +30,19 @@ Item {
   PomodoroEngine { id: pomodoro }
   TimerEngine { id: countdown }
   StopwatchEngine { id: stopwatch }
+
+  // V2: the concrete adapter at the seam. The engines and views stay unchanged.
+  FocusLog { id: focusLog }
+
+  // Connect at the signal itself so every delivery is recorded, including a
+  // redelivered event (INSERT OR IGNORE in the helper makes that idempotent).
+  Connections {
+    target: root
+
+    function onFocusSessionCompleted(sessionId, durationMinutes, timestamp) {
+      focusLog.recordFocus(sessionId, durationMinutes, timestamp)
+    }
+  }
 
   Connections {
     target: pomodoro
@@ -76,4 +90,9 @@ Item {
   function debugSetTimerPreset(minutes) { return countdown.setPreset(minutes) }
   function debugSetCustomMinutes(minutes) { return countdown.setCustomMinutes(minutes) }
   function debugExpireTimer() { countdown.complete() }
+  // Redeliver a completion event verbatim to verify idempotent recording.
+  function debugRedeliverFocus(payload) {
+    var event = JSON.parse(payload)
+    root.focusSessionCompleted(event.sessionId, event.durationMinutes, event.timestamp)
+  }
 }
