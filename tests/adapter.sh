@@ -30,7 +30,27 @@ zc_has_field()    { zc_state | jq -e --arg key "$1" 'has($key)' >/dev/null 2>&1;
 zc_toggle()       { zc_ipc toggle "$ZC_PLUGIN_ID"; }
 zc_hide()         { zc_ipc hide "$ZC_PLUGIN_ID"; }
 zc_call()         { local method="${1:-}"; zc_ipc call "$ZC_PLUGIN_ID" "$method" "${2:-}"; }
-zc_key()          { wtype -k "$1"; }
+# Never inject synthetic keys into whatever window happens to have focus.
+zc_key() {
+  if [[ "$(zc_field '.opened' 2>/dev/null || true)" != "true" ]]; then
+    echo "zc_key refused: overlay is not open" >&2
+    return 1
+  fi
+  wtype -k "$1"
+}
+
+# Poll until a JSON field changes from its previous value.
+zc_wait_changed() {
+  local filter="$1" previous="$2" attempts="${3:-15}" actual=""
+  while (( attempts > 0 )); do
+    actual="$(zc_field "$filter" 2>/dev/null || true)"
+    [[ -n "$actual" && "$actual" != "$previous" ]] && return 0
+    sleep 0.2
+    attempts=$((attempts - 1))
+  done
+  echo "timeout waiting for $filter to change from $previous (last: $actual)" >&2
+  return 1
+}
 
 # Poll until a JSON field reaches the expected value.
 zc_wait_field() {

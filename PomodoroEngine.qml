@@ -17,8 +17,12 @@ Item {
 
   // "focus" | "shortBreak" | "longBreak" | "cycleComplete"
   property string phase: "focus"
-  property int sessionNumber: 1           // 1..4 within the current cycle
   property int completedFocusSessions: 0  // 0..4 within the current cycle
+  // 1..4 within the current cycle, derived so it can never disagree with the
+  // four progress glyphs in the view.
+  readonly property int sessionNumber: root.phase === "focus"
+    ? Math.min(root.sessionsPerCycle, root.completedFocusSessions + 1)
+    : Math.max(1, Math.min(root.sessionsPerCycle, root.completedFocusSessions))
   property int remainingSeconds: focusMinutes * 60
   property bool running: false
   property real deadlineMs: 0             // wall-clock deadline for current phase
@@ -28,10 +32,6 @@ Item {
   readonly property string runId: "zc-" + Date.now().toString(36)
 
   readonly property string formattedTime: formatSeconds(root.remainingSeconds)
-  readonly property real progress: {
-    var total = durationForPhase(root.phase) * 60
-    return total > 0 ? Math.max(0, Math.min(1, (total - root.remainingSeconds) / total)) : 0
-  }
   readonly property bool cycleHalted: root.phase === "cycleComplete"
   readonly property bool canSkip: root.phase === "shortBreak" || root.phase === "longBreak"
 
@@ -62,8 +62,6 @@ Item {
     return root.focusMinutes
   }
 
-  function playCue(cue) { root.cueRequested(cue) }
-
   function beginPhase(p, seconds) {
     root.phase = p
     root.remainingSeconds = seconds
@@ -89,18 +87,17 @@ Item {
       root.totalFocusSessions++
       root.completedFocusSessions++
       root.focusSessionCompleted(sessionId, root.focusMinutes, nowMs)
-      root.playCue("complete")
+      root.cueRequested("complete")
 
       if (root.completedFocusSessions >= root.sessionsPerCycle)
         root.beginPhase("longBreak", root.longBreakMinutes * 60)
       else
         root.beginPhase("shortBreak", root.shortBreakMinutes * 60)
     } else if (root.phase === "shortBreak") {
-      root.playCue("bell")
-      root.sessionNumber = Math.min(root.sessionsPerCycle, root.sessionNumber + 1)
+      root.cueRequested("bell")
       root.beginPhase("focus", root.focusMinutes * 60)
     } else if (root.phase === "longBreak") {
-      root.playCue("bell")
+      root.cueRequested("bell")
       root.haltCycle()
     }
   }
@@ -151,7 +148,6 @@ Item {
   function reset() {
     if (root.phase === "cycleComplete") {
       root.completedFocusSessions = 0
-      root.sessionNumber = 1
       root.phase = "focus"
       root.remainingSeconds = root.focusMinutes * 60
       root.deadlineMs = 0
@@ -167,7 +163,6 @@ Item {
   // Pomodoro Cycle always requires explicit confirmation via startNewCycle().
   function skip() {
     if (root.phase === "shortBreak") {
-      root.sessionNumber = Math.min(root.sessionsPerCycle, root.sessionNumber + 1)
       root.beginPhase("focus", root.focusMinutes * 60)
     } else if (root.phase === "longBreak") {
       root.haltCycle()
@@ -176,7 +171,6 @@ Item {
 
   function startNewCycle() {
     root.completedFocusSessions = 0
-    root.sessionNumber = 1
     root.beginPhase("focus", root.focusMinutes * 60)
   }
 

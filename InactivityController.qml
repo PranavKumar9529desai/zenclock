@@ -6,7 +6,7 @@ import qs.Commons
  * Zen Inactivity controller.
  *
  * Self-contained and reusable: the owner supplies the secondary HUD group to
- * fade, toggles `enabled` with the overlay's visibility, and calls `wake()`
+ * fade, sets `active` with the overlay's visibility, and calls `wake()`
  * from every user-input handler. Everything else (idle counting, state, fade
  * timing, easing) lives here.
  */

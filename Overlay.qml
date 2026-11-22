@@ -13,10 +13,9 @@ Item {
   property var shell: null
   property var manifest: null
   property bool opened: false
+  property bool openRequested: false
   property string mode: "clock" // "clock" | "pomodoro" | "timer" | "stopwatch"
-  // Zen Inactivity drives this seam so every mode's secondary HUD fades,
-  // leaving only the primary digits visible.
-  property bool hudFaded: inactivity.zenActive
+  property bool cueAvailable: true
 
   // Clock state. The clock stays live while hidden so re-summoning never
   // shows a stale time.
@@ -64,26 +63,48 @@ Item {
     : (root.pad2(root.hours) + ":" + root.pad2(root.minutes))
   readonly property string secondsText: ":" + root.pad2(root.seconds)
   readonly property string ampmText: root.hours < 12 ? "AM" : "PM"
-  readonly property string dateText: Qt.formatDate(root.now, "dddd, d MMMM yyyy")
+  readonly property string dateText: Qt.formatDate(
+    root.now, Qt.locale(Commons.I18n.formatLocale), "dddd, d MMMM yyyy")
   readonly property string timezoneText: root.zoneName
     ? root.zoneName + " • " + root.zoneAbbr + " (UTC" + root.offsetLabel(root.now) + ")"
     : ""
 
+  // Only show the panel once the focused monitor is known, so it never flashes
+  // on the previous screen or loses focus to a screen change after mapping.
   function open(payload) {
-    root.opened = true
+    root.openRequested = true
+    monitorProbe.running = false
     monitorProbe.running = true
+  }
+
+  function finishOpen() {
+    if (!root.openRequested || root.opened) return
+    root.opened = true
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
   function close() {
+    root.openRequested = false
     root.opened = false
   }
 
   function dismiss() {
     root.close()
-    if (root.shell && typeof root.shell.hide === "function")
-      root.shell.hide((root.manifest && root.manifest.id) || "pranav.zenclock")
+    if (root.shell && root.manifest && root.manifest.id && typeof root.shell.hide === "function")
+      root.shell.hide(root.manifest.id)
   }
+
+  // Test-only seams driven by tests/smoke.sh through `omarchy-shell shell call`.
+  function debugResetAll() {
+    root.setMode("clock")
+    pomodoroEngine.reset()
+    timerEngine.setPreset(5)
+    stopwatchEngine.reset()
+  }
+  function debugAdvancePhase() { pomodoroEngine.advance() }
+  function debugSetTimerPreset(minutes) { return timerEngine.setPreset(minutes) }
+  function debugSetCustomMinutes(minutes) { return timerEngine.setCustomMinutes(minutes) }
+  function debugExpireTimer() { timerEngine.complete() }
 
   function toggleFormat() {
     root.hour12 = !root.hour12
@@ -104,6 +125,8 @@ Item {
       format: root.hour12 ? "12h" : "24h",
       time: root.clockText + root.secondsText + (root.hour12 ? " " + root.ampmText : ""),
       timezone: root.timezoneText,
+      screen: root.targetScreen ? root.targetScreen.name : "",
+      cueAvailable: root.cueAvailable,
       zenActive: inactivity.zenActive,
       mode: root.mode,
       pomodoro: root.mode === "pomodoro" ? {
@@ -124,13 +147,25 @@ Item {
         elapsed: stopwatchEngine.formattedTime,
         elapsedSeconds: stopwatchEngine.elapsedSeconds,
         elapsedMilliseconds: stopwatchEngine.elapsedMs,
-        duration: stopwatchEngine.elapsedSeconds,
         running: stopwatchEngine.running
       } : null
     })
   }
 
-  Component.onCompleted: timezoneProbe.running = true
+  Component.onCompleted: {
+    timezoneProbe.running = true
+    cueProbe.running = true
+  }
+
+  // Audio cues are the only notification channel; surface tool availability so
+  // "no chime" is distinguishable from "no chime player installed".
+  Process {
+    id: cueProbe
+    command: ["bash", "-c", "command -v canberra-gtk-play >/dev/null 2>&1 && echo yes || echo no"]
+    stdout: StdioCollector {
+      onStreamFinished: root.cueAvailable = (text.trim() === "yes")
+    }
+  }
 
   Timer {
     interval: 1000
@@ -173,8 +208,11 @@ Item {
             if (Quickshell.screens[j].name === focused.name) match = Quickshell.screens[j]
         }
         root.targetScreen = match || Quickshell.screens[0] || null
+        root.finishOpen()
       }
     }
+    // hyprctl may be unavailable; still show the overlay on the fallback screen.
+    onExited: root.finishOpen()
   }
 
   PanelWindow {
@@ -189,6 +227,10 @@ Item {
     WlrLayershell.namespace: "zenclock"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: root.opened ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+
+    onVisibleChanged: {
+      if (visible) Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    }
 
     FocusScope {
       id: keyCatcher
@@ -284,149 +326,64 @@ Item {
         }
 
         // Floating mode selector: Clock (1), Pomodoro (2), Timer (3),
-        // Stopwatch (4).
+        // Stopwatch (4). One delegate keeps activity/wake handling in one place.
         Row {
           anchors { top: parent.top; horizontalCenter: parent.horizontalCenter; topMargin: 34 }
           spacing: 10
 
-          Rectangle {
-            id: clockPill
-            property bool hovered: false
-            radius: 999
-            color: root.mode === "clock" ? "#1b2a33" : (clockPill.hovered ? "#1e1e26" : "#141419")
-            border.color: root.mode === "clock" ? "#7dd3fc" : "#2a2a34"
-            border.width: 1
-            implicitWidth: clockPillLabel.implicitWidth + 32
-            implicitHeight: clockPillLabel.implicitHeight + 14
+          Repeater {
+            model: [
+              { mode: "clock", label: "pill.clock" },
+              { mode: "pomodoro", label: "pill.pomodoro" },
+              { mode: "timer", label: "pill.timer" },
+              { mode: "stopwatch", label: "pill.stopwatch" }
+            ]
 
-            Behavior on color {
-              ColorAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic }
-            }
+            delegate: Rectangle {
+              id: pill
+              required property var modelData
+              property bool hovered: false
+              property bool current: root.mode === modelData.mode
 
-            PlainText {
-              id: clockPillLabel
-              anchors.centerIn: parent
-              text: strings.t("pill.clock")
-              font.pixelSize: 13
-              font.letterSpacing: 2
-              font.family: Style.font.family
-              color: root.mode === "clock" ? "#7dd3fc" : "#8a8a96"
-            }
+              radius: 999
+              color: pill.current ? "#1b2a33" : (pill.hovered ? "#1e1e26" : "#141419")
+              border.color: pill.current ? "#7dd3fc" : "#2a2a34"
+              border.width: 1
+              implicitWidth: pillLabel.implicitWidth + 32
+              implicitHeight: pillLabel.implicitHeight + 14
 
-            MouseArea {
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onEntered: clockPill.hovered = true
-              onExited: clockPill.hovered = false
-              onClicked: root.setMode("clock")
-            }
-          }
+              Behavior on color {
+                ColorAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic }
+              }
 
-          Rectangle {
-            id: pomodoroPill
-            property bool hovered: false
-            radius: 999
-            color: root.mode === "pomodoro" ? "#1b2a33" : (pomodoroPill.hovered ? "#1e1e26" : "#141419")
-            border.color: root.mode === "pomodoro" ? "#7dd3fc" : "#2a2a34"
-            border.width: 1
-            implicitWidth: pomodoroPillLabel.implicitWidth + 32
-            implicitHeight: pomodoroPillLabel.implicitHeight + 14
+              PlainText {
+                id: pillLabel
+                anchors.centerIn: parent
+                text: strings.t(pill.modelData.label)
+                font.pixelSize: 13
+                font.letterSpacing: 2
+                font.family: Style.font.family
+                color: pill.current ? "#7dd3fc" : "#8a8a96"
+              }
 
-            Behavior on color {
-              ColorAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic }
-            }
-
-            PlainText {
-              id: pomodoroPillLabel
-              anchors.centerIn: parent
-              text: strings.t("pill.pomodoro")
-              font.pixelSize: 13
-              font.letterSpacing: 2
-              font.family: Style.font.family
-              color: root.mode === "pomodoro" ? "#7dd3fc" : "#8a8a96"
-            }
-
-            MouseArea {
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onEntered: pomodoroPill.hovered = true
-              onExited: pomodoroPill.hovered = false
-              onClicked: root.setMode("pomodoro")
-            }
-          }
-
-          Rectangle {
-            id: timerPill
-            property bool hovered: false
-            radius: 999
-            color: root.mode === "timer" ? "#1b2a33" : (timerPill.hovered ? "#1e1e26" : "#141419")
-            border.color: root.mode === "timer" ? "#7dd3fc" : "#2a2a34"
-            border.width: 1
-            implicitWidth: timerPillLabel.implicitWidth + 32
-            implicitHeight: timerPillLabel.implicitHeight + 14
-
-            Behavior on color {
-              ColorAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic }
-            }
-
-            PlainText {
-              id: timerPillLabel
-              anchors.centerIn: parent
-              text: strings.t("pill.timer")
-              font.pixelSize: 13
-              font.letterSpacing: 2
-              font.family: Style.font.family
-              color: root.mode === "timer" ? "#7dd3fc" : "#8a8a96"
-            }
-
-            MouseArea {
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onEntered: timerPill.hovered = true
-              onExited: timerPill.hovered = false
-              onClicked: root.setMode("timer")
-            }
-          }
-
-          Rectangle {
-            id: stopwatchPill
-            property bool hovered: false
-            radius: 999
-            color: root.mode === "stopwatch" ? "#1b2a33" : (stopwatchPill.hovered ? "#1e1e26" : "#141419")
-            border.color: root.mode === "stopwatch" ? "#7dd3fc" : "#2a2a34"
-            border.width: 1
-            implicitWidth: stopwatchPillLabel.implicitWidth + 32
-            implicitHeight: stopwatchPillLabel.implicitHeight + 14
-
-            Behavior on color {
-              ColorAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic }
-            }
-
-            PlainText {
-              id: stopwatchPillLabel
-              anchors.centerIn: parent
-              text: strings.t("pill.stopwatch")
-              font.pixelSize: 13
-              font.letterSpacing: 2
-              font.family: Style.font.family
-              color: root.mode === "stopwatch" ? "#7dd3fc" : "#8a8a96"
-            }
-
-            MouseArea {
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onEntered: stopwatchPill.hovered = true
-              onExited: stopwatchPill.hovered = false
-              onClicked: root.setMode("stopwatch")
+              MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: inactivity.zenActive ? Qt.BlankCursor : Qt.PointingHandCursor
+                onEntered: pill.hovered = true
+                onExited: pill.hovered = false
+                onPositionChanged: inactivity.wake()
+                onClicked: {
+                  inactivity.wake()
+                  root.setMode(pill.modelData.mode)
+                }
+              }
             }
           }
         }
 
         Rectangle {
+          visible: root.timezoneText !== ""
           anchors { top: parent.top; right: parent.right; topMargin: 36; rightMargin: 48 }
           radius: 999
           color: "#141419"
@@ -442,6 +399,14 @@ Item {
             font.pixelSize: 14
             font.family: Style.font.family
             color: "#b6b6c2"
+          }
+
+          MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: inactivity.zenActive ? Qt.BlankCursor : Qt.ArrowCursor
+            onPositionChanged: inactivity.wake()
+            onClicked: inactivity.wake()
           }
         }
 
@@ -551,7 +516,8 @@ Item {
         visible: root.mode === "pomodoro"
         anchors.fill: parent
         engine: pomodoroEngine
-        hudFaded: root.hudFaded
+        hudFaded: inactivity.zenActive
+        onActivity: inactivity.wake()
       }
 
       TimerView {
@@ -559,7 +525,8 @@ Item {
         visible: root.mode === "timer"
         anchors.fill: parent
         engine: timerEngine
-        hudFaded: root.hudFaded
+        hudFaded: inactivity.zenActive
+        onActivity: inactivity.wake()
         onFocusRestored: keyCatcher.forceActiveFocus()
       }
 
@@ -567,7 +534,8 @@ Item {
         visible: root.mode === "stopwatch"
         anchors.fill: parent
         engine: stopwatchEngine
-        hudFaded: root.hudFaded
+        hudFaded: inactivity.zenActive
+        onActivity: inactivity.wake()
       }
     }
   }

@@ -22,10 +22,6 @@ Item {
 
   readonly property int durationSeconds: root.durationMinutes * 60
   readonly property string formattedTime: formatSeconds(root.remainingSeconds)
-  readonly property real progress: {
-    var total = root.durationSeconds
-    return total > 0 ? Math.max(0, Math.min(1, (total - root.remainingSeconds) / total)) : 0
-  }
 
   // Domain event seam for the future SQLite sink (Ticket 5). The timestamp is
   // Unix epoch milliseconds (Date.now()); durationMinutes is the configured
@@ -45,8 +41,6 @@ Item {
     var r = s % 60
     return (m < 10 ? "0" : "") + m + ":" + (r < 10 ? "0" : "") + r
   }
-
-  function playCue(cue) { root.cueRequested(cue) }
 
   // Selecting a preset configures a fresh, paused countdown.
   function setPreset(minutes) {
@@ -116,7 +110,7 @@ Item {
     root.remainingSeconds = 0
     var nowMs = Date.now()
     root.countdownCompleted(root.durationMinutes, nowMs)
-    root.playCue("complete")
+    root.cueRequested("complete")
   }
 
   Timer {
