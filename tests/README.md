@@ -27,7 +27,25 @@ break them.
 | `zc_call <method> [arg]` | Invoke a plugin method |
 | `zc_key <wtype-key>` | Send a real keystroke |
 | `zc_wait_field <filter> <value> [attempts]` | Poll until state settles |
+| `zc_wait_changed <filter> <previous> [attempts]` | Poll until a clock/timer advances |
 | `zc_assert_eq` / `zc_assert_contains` | Assertions |
+
+`zc_key` refuses to inject anything unless `state().opened` is true, so a
+failed run cannot type into an unrelated focused window. Teardown uses IPC
+`hide`, never synthetic keys.
+
+## Test-only plugin seams
+
+`state()` also reports `screen` and `cueAvailable`. The plugin exposes five
+debug methods through shell IPC, used only by `smoke.sh`: `debugResetAll`,
+`debugAdvancePhase`, `debugSetTimerPreset`, `debugSetCustomMinutes`, and
+`debugExpireTimer`. They let the deadline-based state machines be driven
+without waiting through a 100-minute cycle. No analytics or event storage is
+added by these methods.
+
+Synthetic pointer motion is not injected: this machine's Hyprland build cannot
+move the cursor without disturbing keyboard focus, so pointer-driven Zen wake
+is verified in code review. Keyboard wake is covered by the smoke test.
 
 ## Running
 
