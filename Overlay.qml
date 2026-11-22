@@ -13,6 +13,7 @@ Item {
   property var shell: null
   property var manifest: null
   property bool opened: false
+  property string mode: "clock" // "clock" | "pomodoro"; Timer / Stopwatch come later
 
   // Clock state. The clock stays live while hidden so re-summoning never
   // shows a stale time.
@@ -21,6 +22,10 @@ Item {
   property string zoneName: ""
   property string zoneAbbr: ""
   property var targetScreen: Quickshell.screens[0] || null
+
+  // Always-loaded Pomodoro state machine: its deadline timer keeps advancing
+  // while the overlay is dismissed (manifest keepLoaded: true).
+  PomodoroEngine { id: pomodoroEngine }
 
   Commons.Translations {
     id: strings
@@ -71,12 +76,25 @@ Item {
     root.hour12 = !root.hour12
   }
 
+  function setMode(nextMode) {
+    if (nextMode !== "clock" && nextMode !== "pomodoro") return
+    root.mode = nextMode
+  }
+
   function state() {
     return JSON.stringify({
       opened: root.opened,
       format: root.hour12 ? "12h" : "24h",
       time: root.clockText + root.secondsText + (root.hour12 ? " " + root.ampmText : ""),
-      timezone: root.timezoneText
+      timezone: root.timezoneText,
+      mode: root.mode,
+      pomodoro: root.mode === "pomodoro" ? {
+        phase: pomodoroEngine.phase,
+        remaining: pomodoroEngine.formattedTime,
+        session: pomodoroEngine.sessionNumber,
+        running: pomodoroEngine.running,
+        cycleHalted: pomodoroEngine.cycleHalted
+      } : null
     })
   }
 
@@ -152,6 +170,18 @@ Item {
         } else if (event.key === Qt.Key_T) {
           root.toggleFormat()
           event.accepted = true
+        } else if (event.key === Qt.Key_1) {
+          root.setMode("clock")
+          event.accepted = true
+        } else if (event.key === Qt.Key_2) {
+          root.setMode("pomodoro")
+          event.accepted = true
+        } else if (root.mode === "pomodoro" && event.key === Qt.Key_Space) {
+          pomodoroEngine.toggle()
+          event.accepted = true
+        } else if (root.mode === "pomodoro" && event.key === Qt.Key_R) {
+          pomodoroEngine.reset()
+          event.accepted = true
         }
       }
 
@@ -179,6 +209,121 @@ Item {
             font.letterSpacing: 3
             font.family: Style.font.family
             color: "#8a8a96"
+          }
+        }
+
+        // Floating mode selector. Timer (3) and Stopwatch (4) are reserved
+        // for a later ticket: shown dimmed with no click handler.
+        Row {
+          anchors { top: parent.top; horizontalCenter: parent.horizontalCenter; topMargin: 34 }
+          spacing: 10
+
+          Rectangle {
+            id: clockPill
+            property bool hovered: false
+            radius: 999
+            color: root.mode === "clock" ? "#1b2a33" : (clockPill.hovered ? "#1e1e26" : "#141419")
+            border.color: root.mode === "clock" ? "#7dd3fc" : "#2a2a34"
+            border.width: 1
+            implicitWidth: clockPillLabel.implicitWidth + 32
+            implicitHeight: clockPillLabel.implicitHeight + 14
+
+            Behavior on color {
+              ColorAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic }
+            }
+
+            PlainText {
+              id: clockPillLabel
+              anchors.centerIn: parent
+              text: strings.t("pill.clock")
+              font.pixelSize: 13
+              font.letterSpacing: 2
+              font.family: Style.font.family
+              color: root.mode === "clock" ? "#7dd3fc" : "#8a8a96"
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onEntered: clockPill.hovered = true
+              onExited: clockPill.hovered = false
+              onClicked: root.setMode("clock")
+            }
+          }
+
+          Rectangle {
+            id: pomodoroPill
+            property bool hovered: false
+            radius: 999
+            color: root.mode === "pomodoro" ? "#1b2a33" : (pomodoroPill.hovered ? "#1e1e26" : "#141419")
+            border.color: root.mode === "pomodoro" ? "#7dd3fc" : "#2a2a34"
+            border.width: 1
+            implicitWidth: pomodoroPillLabel.implicitWidth + 32
+            implicitHeight: pomodoroPillLabel.implicitHeight + 14
+
+            Behavior on color {
+              ColorAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic }
+            }
+
+            PlainText {
+              id: pomodoroPillLabel
+              anchors.centerIn: parent
+              text: strings.t("pill.pomodoro")
+              font.pixelSize: 13
+              font.letterSpacing: 2
+              font.family: Style.font.family
+              color: root.mode === "pomodoro" ? "#7dd3fc" : "#8a8a96"
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onEntered: pomodoroPill.hovered = true
+              onExited: pomodoroPill.hovered = false
+              onClicked: root.setMode("pomodoro")
+            }
+          }
+
+          Rectangle {
+            opacity: 0.35
+            radius: 999
+            color: "#141419"
+            border.color: "#2a2a34"
+            border.width: 1
+            implicitWidth: timerPillLabel.implicitWidth + 32
+            implicitHeight: timerPillLabel.implicitHeight + 14
+
+            PlainText {
+              id: timerPillLabel
+              anchors.centerIn: parent
+              text: strings.t("pill.timer")
+              font.pixelSize: 13
+              font.letterSpacing: 2
+              font.family: Style.font.family
+              color: "#8a8a96"
+            }
+          }
+
+          Rectangle {
+            opacity: 0.35
+            radius: 999
+            color: "#141419"
+            border.color: "#2a2a34"
+            border.width: 1
+            implicitWidth: stopwatchPillLabel.implicitWidth + 32
+            implicitHeight: stopwatchPillLabel.implicitHeight + 14
+
+            PlainText {
+              id: stopwatchPillLabel
+              anchors.centerIn: parent
+              text: strings.t("pill.stopwatch")
+              font.pixelSize: 13
+              font.letterSpacing: 2
+              font.family: Style.font.family
+              color: "#8a8a96"
+            }
           }
         }
 
@@ -231,6 +376,7 @@ Item {
 
       Item {
         anchors.centerIn: parent
+        visible: root.mode === "clock"
         width: clockColumn.implicitWidth
         height: clockColumn.implicitHeight
 
@@ -297,6 +443,12 @@ Item {
           cursorShape: Qt.PointingHandCursor
           onClicked: root.toggleFormat()
         }
+      }
+
+      PomodoroView {
+        visible: root.mode === "pomodoro"
+        anchors.fill: parent
+        engine: pomodoroEngine
       }
     }
   }
