@@ -114,6 +114,22 @@ Item {
     root.running = false
   }
 
+  // Ticket #19 / ADR 0003: the single exception to ADR 0002's no-engine-changes
+  // promise. Restores a checkpoint as a PAUSED, partially elapsed phase so the
+  // existing primary button already reads "Resume". runId and the lifetime
+  // counters are deliberately left fresh; only cycle position is restored.
+  function restoreSnapshot(phase, remainingSeconds, completedFocusSessions) {
+    if (phase !== "focus" && phase !== "shortBreak" && phase !== "longBreak") return false
+    if (!(remainingSeconds > 0) || root.running) return false
+    root.phase = phase
+    root.completedFocusSessions = Math.max(0,
+      Math.min(root.sessionsPerCycle, completedFocusSessions))
+    root.remainingSeconds = remainingSeconds
+    root.deadlineMs = 0
+    root.running = false
+    return true
+  }
+
   function start() {
     if (root.phase === "cycleComplete") {
       root.startNewCycle()
