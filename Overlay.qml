@@ -14,9 +14,9 @@ Item {
   property var manifest: null
   property bool opened: false
   property string mode: "clock" // "clock" | "pomodoro"; Timer / Stopwatch come later
-  // Owner-controlled seam: when Zen Inactivity lands, it binds this to its
-  // zenActive state so Pomodoro's secondary HUD fades with the clock HUD.
-  property bool hudFaded: false
+  // Zen Inactivity drives this seam so Pomodoro's secondary HUD fades with
+  // the clock HUD while the primary MM:SS digits stay visible.
+  property bool hudFaded: inactivity.zenActive
 
   // Clock state. The clock stays live while hidden so re-summoning never
   // shows a stale time.
@@ -33,6 +33,13 @@ Item {
   Commons.Translations {
     id: strings
     directory: Qt.resolvedUrl("i18n")
+  }
+
+  // Zen Inactivity: fades the secondary HUD and hides the cursor after idle.
+  InactivityController {
+    id: inactivity
+    active: root.opened
+    target: hud
   }
 
   function pad2(value) {
@@ -90,6 +97,7 @@ Item {
       format: root.hour12 ? "12h" : "24h",
       time: root.clockText + root.secondsText + (root.hour12 ? " " + root.ampmText : ""),
       timezone: root.timezoneText,
+      zenActive: inactivity.zenActive,
       mode: root.mode,
       pomodoro: root.mode === "pomodoro" ? {
         phase: pomodoroEngine.phase,
@@ -167,6 +175,7 @@ Item {
       focus: true
 
       Keys.onPressed: function(event) {
+        inactivity.wake()
         if (event.key === Qt.Key_Escape) {
           root.dismiss()
           event.accepted = true
@@ -186,6 +195,19 @@ Item {
           pomodoroEngine.reset()
           event.accepted = true
         }
+      }
+
+      // Full-window activity sensor. Kept behind the HUD and clock so it
+      // never steals their clicks; those forward wake() themselves.
+      MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: inactivity.zenActive ? Qt.BlankCursor : Qt.ArrowCursor
+        onPositionChanged: inactivity.wake()
+        onPressed: inactivity.wake()
+        onReleased: inactivity.wake()
+        onClicked: inactivity.wake()
+        onWheel: inactivity.wake()
       }
 
       // Secondary HUD elements. Kept in one group so Zen Inactivity can fade
@@ -443,8 +465,11 @@ Item {
 
         MouseArea {
           anchors.fill: parent
-          cursorShape: Qt.PointingHandCursor
-          onClicked: root.toggleFormat()
+          cursorShape: inactivity.zenActive ? Qt.BlankCursor : Qt.PointingHandCursor
+          onClicked: {
+            inactivity.wake()
+            root.toggleFormat()
+          }
         }
       }
 
