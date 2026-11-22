@@ -129,6 +129,18 @@ Item {
   function debugSelectFocusLogAdapter(spec) {
     if (root.service) root.service.debugSelectFocusLogAdapter(spec || "production")
   }
+  // The shell IPC dispatcher has one string argument and calls the overlay,
+  // so every service debug seam used by the smoke tests must be forwarded here.
+  function debugRedeliverFocus(payload) {
+    if (root.service) root.service.debugRedeliverFocus(payload)
+  }
+  function debugRedeliverCycle(payload) {
+    if (root.service) root.service.debugRedeliverCycle(payload)
+  }
+  function debugRedeliverCountdown(payload) {
+    if (root.service) root.service.debugRedeliverCountdown(payload)
+  }
+  function debugRestoreCheckpoint() { if (root.service) root.service.debugRestoreCheckpoint() }
   function debugSetEventCapture(enabled) {
     if (root.service)
       root.service.debugEventCapture = (enabled === true || enabled === "true")

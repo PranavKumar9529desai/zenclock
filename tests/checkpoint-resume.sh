@@ -120,7 +120,8 @@ with conn:
 conn.close()
 PY
 
-zc_call debugRestoreCheckpoint '' >/dev/null
+check zc_assert_eq "checkpoint restore seam is wired" \
+  "$(zc_call debugRestoreCheckpoint '')" "ok"
 check zc_wait_field '.pomodoro.phase' focus 10
 check zc_wait_field '.pomodoro.remaining' 10:12 10
 check zc_wait_field '.pomodoro.session' 3 10
@@ -161,7 +162,8 @@ with conn:
         "saved_at=excluded.saved_at", (int(time.time() * 1000),))
 conn.close()
 PY
-zc_call debugRestoreCheckpoint '' >/dev/null
+check zc_assert_eq "checkpoint restore seam is wired" \
+  "$(zc_call debugRestoreCheckpoint '')" "ok"
 check zc_wait_field '.pomodoro.phase' longBreak 10
 check zc_wait_field '.pomodoro.remaining' 10:00 10
 check zc_assert_eq "restored Long Break is paused" "$(zc_field '.pomodoro.running')" "false"
@@ -184,7 +186,8 @@ with conn:
         "saved_at=excluded.saved_at", (int(time.time() * 1000),))
 conn.close()
 PY
-zc_call debugRestoreCheckpoint '' >/dev/null
+check zc_assert_eq "checkpoint restore seam is wired" \
+  "$(zc_call debugRestoreCheckpoint '')" "ok"
 check zc_wait_field '.pomodoro.phase' focus 10
 check zc_assert_eq "persisted session number is restored even when progress disagrees" \
   "$(zc_field '.pomodoro.session')" "2"

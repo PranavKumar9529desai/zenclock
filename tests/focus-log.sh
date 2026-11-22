@@ -67,7 +67,10 @@ check zc_assert_eq "Focus Record holds the completion timestamp" \
 check zc_assert_eq "completion timestamp is Unix epoch milliseconds" \
   "$([[ "$timestamp" =~ ^[0-9]{13}$ ]] && echo yes || echo no)" "yes"
 # Redeliver the same completion through the seam; it must not double-count.
-zc_call debugRedeliverFocus "$focus_event" >/dev/null
+# Assert the IPC forward exists: an unwired seam returns "unknown" and would
+# make every idempotency check below vacuously pass.
+check zc_assert_eq "focus redelivery seam is wired" \
+  "$(zc_call debugRedeliverFocus "$focus_event")" "ok"
 sleep 0.6
 check zc_assert_eq "redelivery leaves one Focus Record" \
   "$(zfl_sql "$ZFL_DB" 'SELECT COUNT(*) FROM focus_record')" "$((baseline + 1))"
@@ -97,7 +100,8 @@ check zc_assert_eq "Cycle Record holds the Pomodoro Cycle ID" \
   "$(zfl_sql "$ZFL_DB" "SELECT id FROM cycle_record WHERE id = '$cycle_id'")" "$cycle_id"
 check zc_assert_eq "Cycle Record holds the completion timestamp" \
   "$(zfl_sql "$ZFL_DB" "SELECT recorded_at FROM cycle_record WHERE id = '$cycle_id'")" "$cycle_timestamp"
-zc_call debugRedeliverCycle "$cycle_event" >/dev/null
+check zc_assert_eq "cycle redelivery seam is wired" \
+  "$(zc_call debugRedeliverCycle "$cycle_event")" "ok"
 sleep 0.6
 check zc_assert_eq "cycle redelivery leaves one new Cycle Record" \
   "$(zfl_sql "$ZFL_DB" 'SELECT COUNT(*) FROM cycle_record')" "$((cycle_baseline + 1))"
@@ -126,7 +130,8 @@ check zc_assert_eq "Countdown Record holds the completion timestamp" \
   "$(zfl_sql "$ZFL_DB" "SELECT recorded_at FROM countdown_record WHERE id = '$countdown_id'")" "$countdown_timestamp"
 check zc_assert_eq "countdown does not inflate the canonical focus metric" \
   "$(zfl_sql "$ZFL_DB" 'SELECT SUM(duration_minutes) FROM focus_record')" "$focus_total"
-zc_call debugRedeliverCountdown "$countdown_event" >/dev/null
+check zc_assert_eq "countdown redelivery seam is wired" \
+  "$(zc_call debugRedeliverCountdown "$countdown_event")" "ok"
 sleep 0.6
 check zc_assert_eq "countdown redelivery leaves one new Countdown Record" \
   "$(zfl_sql "$ZFL_DB" 'SELECT COUNT(*) FROM countdown_record')" "$((countdown_baseline + 1))"
