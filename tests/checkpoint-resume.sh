@@ -52,6 +52,21 @@ PY
 sleep 0.6
 check zfl_wait_count 0 15
 
+# A phase start writes a full-duration checkpoint immediately; the pause tick
+# then overwrites it with the frozen remaining time. Wait for that overwrite
+# instead of racing it.
+zfl_wait_partial() {
+  local attempts=20 actual=""
+  while (( attempts > 0 )); do
+    actual="$(zfl_sql "$ZFL_DB" 'SELECT remaining_seconds FROM checkpoint' 2>/dev/null || true)"
+    [[ "$actual" =~ ^[0-9]+$ ]] && (( actual > 0 && actual < 1500 )) && return 0
+    sleep 0.2
+    attempts=$((attempts - 1))
+  done
+  echo "timeout waiting for a partially elapsed checkpoint (last: $actual)" >&2
+  return 1
+}
+
 # --- Pause writes one checkpoint with the full cycle position ---------------
 zc_toggle >/dev/null
 sleep 0.7
@@ -59,14 +74,21 @@ zc_press 2
 check zc_wait_field '.mode' pomodoro 10
 zc_press space
 check zc_wait_field '.pomodoro.running' true 10
-sleep 2
+# Wait for the countdown itself to move; a fixed sleep can pause before the
+# first tick and produce a misleading full-duration checkpoint.
+started_remaining="$(zc_field '.pomodoro.remaining')"
+check zc_wait_changed '.pomodoro.remaining' "$started_remaining" 10
 zc_press space
 check zc_wait_field '.pomodoro.running' false 10
 check zfl_wait_count 1 15
+check zfl_wait_partial
 
 check zc_assert_eq "one upserted checkpoint row after pause" "$(zfl_sql "$ZFL_DB" 'SELECT COUNT(*) FROM checkpoint')" "1"
 check zc_assert_eq "checkpoint holds the phase" "$(zfl_sql "$ZFL_DB" 'SELECT phase FROM checkpoint')" "focus"
-check zc_assert_eq "checkpoint holds the session number" "$(zfl_sql "$ZFL_DB" 'SELECT session_number FROM checkpoint')" "1"
+# The cycle position carried over from earlier smoke runs in this shell; assert
+# the checkpoint mirrors the engine rather than assuming a fresh first session.
+expected_session="$(zc_field '.pomodoro.session')"
+check zc_assert_eq "checkpoint holds the session number" "$(zfl_sql "$ZFL_DB" 'SELECT session_number FROM checkpoint')" "$expected_session"
 check zc_assert_eq "checkpoint holds completed Focus Session count" \
   "$(zfl_sql "$ZFL_DB" 'SELECT completed_focus_sessions FROM checkpoint')" "0"
 remaining="$(zfl_sql "$ZFL_DB" 'SELECT remaining_seconds FROM checkpoint')"
@@ -78,7 +100,7 @@ check zc_assert_eq "checkpoint timestamp is epoch milliseconds" \
 check zc_assert_eq "state() reports checkpoint phase" \
   "$(zc_field '.focusLog.checkpoint.phase')" "focus"
 check zc_assert_eq "state() reports checkpoint session number" \
-  "$(zc_field '.focusLog.checkpoint.sessionNumber')" "1"
+  "$(zc_field '.focusLog.checkpoint.sessionNumber')" "$expected_session"
 check zc_assert_eq "state() reports checkpoint saved-at" \
   "$([[ "$(zc_field '.focusLog.checkpoint.savedAt')" =~ ^[0-9]{13}$ ]] && echo yes || echo no)" "yes"
 
@@ -136,8 +158,12 @@ check zc_assert_eq "state derivation marks the restored Focus Session for Resume
 zc_call debugSetEventCapture true >/dev/null
 zc_call debugAdvancePhase '' >/dev/null
 sleep 0.5
+# Lifetime numbering belongs to this run, not to the restored checkpoint. It
+# may already be past f1 after earlier smoke runs in the same shell; what must
+# not happen is restarting from the restored cycle position (completed = 2 -> f3).
+next_session_id="$(zc_events | jq -r 'map(select(.type == "focusSessionCompleted")) | .[0].sessionId')"
 check zc_assert_eq "next Focus Session uses a fresh lifetime number" \
-  "$(zc_events | jq -r 'map(select(.type == "focusSessionCompleted")) | .[0].sessionId | endswith("-f1")')" "true"
+  "$([[ "$next_session_id" =~ -f[0-9]+$ && "$next_session_id" != *-f3 ]] && echo yes || echo no)" "yes"
 check zc_assert_eq "restored Focus Session advanced into its Short Break" \
   "$(zc_field '.pomodoro.phase')" "shortBreak"
 zc_call debugAdvancePhase '' >/dev/null
