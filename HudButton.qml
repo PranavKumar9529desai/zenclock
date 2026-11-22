@@ -2,10 +2,9 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import qs.Commons
 
-// Shared HUD control. `accent` marks the primary action; `interactive` dims and
-// disables conditional actions such as "Skip break". Both `clicked` and
-// `activity` are explicit so the owner can wake Zen Inactivity independently
-// of the action itself.
+// Shared HUD control. `accent` marks the primary action; `interactive` dims a
+// conditional action such as "Skip break". `activity` is separate from
+// `clicked` so the owner can wake Zen Inactivity without firing the action.
 Rectangle {
   id: root
 
@@ -18,28 +17,31 @@ Rectangle {
   signal clicked()
   signal activity()
 
-  radius: 12
-  color: area.containsMouse ? (root.accent ? "#1e2a33" : "#1e1e26") : "#141419"
-  border.color: root.accent ? "#7dd3fc" : "#2a2a34"
+  ZenTheme { id: theme }
+
+  radius: theme.radius
+  color: area.containsMouse ? theme.surfaceHover : theme.surface
+  border.color: root.accent ? theme.accent : theme.line
   border.width: 1
-  implicitWidth: buttonLabel.implicitWidth + (root.accent ? 48 : 40)
-  implicitHeight: buttonLabel.implicitHeight + 22
-  opacity: root.interactive ? 1 : 0.35
+
+  implicitWidth: buttonLabel.implicitWidth + theme.space(44)
+  implicitHeight: buttonLabel.implicitHeight + theme.space(20)
+  opacity: root.interactive ? 1 : 0.4
 
   Behavior on opacity {
-    NumberAnimation { duration: Style.duration(root.faded ? 120 : 180); easing.type: Easing.OutCubic }
+    NumberAnimation { duration: theme.duration; easing.type: Easing.OutCubic }
   }
   Behavior on color {
     ColorAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic }
   }
 
-  PlainText {
+  ZenText {
     id: buttonLabel
     anchors.centerIn: parent
     text: root.label
-    font.pixelSize: 15
-    font.family: Style.font.family
-    color: root.accent ? "#7dd3fc" : "#b6b6c2"
+    role: "label"
+    tone: root.accent ? "accent" : "secondary"
+    font.weight: root.accent ? Font.DemiBold : Font.Normal
   }
 
   MouseArea {
@@ -50,7 +52,7 @@ Rectangle {
     cursorShape: root.faded ? Qt.BlankCursor : Qt.PointingHandCursor
     onEntered: root.activity()
     onClicked: {
-      // A click on an invisible or just-revealed control only reveals it.
+      // A click on a just-revealed control only wakes the HUD.
       if (root.locked) {
         root.activity()
         return

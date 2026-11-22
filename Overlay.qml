@@ -9,6 +9,9 @@ import qs.Commons as Commons
 Item {
   id: root
 
+  // Visual tokens live in one place; see ZenTheme.qml.
+  ZenTheme { id: theme }
+
   // Injected by the Omarchy shell's overlay loader.
   property var shell: null
   property var manifest: null
@@ -77,8 +80,10 @@ Item {
   readonly property string dateText: Qt.formatDate(
     root.now, Qt.locale(Commons.I18n.formatLocale), "dddd, d MMMM yyyy")
   readonly property string timezoneText: root.zoneName
-    ? root.zoneName + " • " + root.zoneAbbr + " (UTC" + root.offsetLabel(root.now) + ")"
+    ? root.zoneName + " · " + root.zoneAbbr + " (UTC" + root.offsetLabel(root.now) + ")"
     : ""
+  readonly property string hintText: root.mode === "clock"
+    ? strings.t("hint.clock") : strings.t("hint.active")
 
   // Only show the panel once the focused monitor is known, so it never flashes
   // on the previous screen or loses focus to a screen change after mapping.
@@ -244,7 +249,7 @@ Item {
     visible: root.opened
     anchors { top: true; bottom: true; left: true; right: true }
     exclusionMode: ExclusionMode.Ignore
-    color: "#08080a"
+    color: theme.background
 
     WlrLayershell.namespace: "zenclock"
     WlrLayershell.layer: WlrLayer.Overlay
@@ -348,66 +353,60 @@ Item {
           }
         }
 
-        Row {
-          anchors { top: parent.top; left: parent.left; topMargin: 42; leftMargin: 48 }
-          spacing: 12
-
-          PlainText {
-            anchors.verticalCenter: parent.verticalCenter
-            text: "◷"
-            font.pixelSize: 20
-            font.family: Style.font.family
-            color: "#7dd3fc"
-          }
-          PlainText {
-            anchors.verticalCenter: parent.verticalCenter
-            text: strings.t("title")
-            font.pixelSize: 16
-            font.letterSpacing: 3
-            font.family: Style.font.family
-            color: "#8a8a96"
-          }
+        ZenText {
+          anchors { top: parent.top; left: parent.left; topMargin: theme.pageMargin; leftMargin: theme.pageMargin }
+          text: strings.t("title")
+          role: "label"
+          tone: "muted"
         }
 
-        // Floating mode selector: Clock (1), Pomodoro (2), Timer (3),
-        // Stopwatch (4). One delegate keeps activity/wake handling in one place.
+        // Mode switcher: label, shortcut number, active rule. No pills, no cards.
         Row {
-          anchors { top: parent.top; horizontalCenter: parent.horizontalCenter; topMargin: 34 }
-          spacing: 10
+          anchors { top: parent.top; horizontalCenter: parent.horizontalCenter; topMargin: theme.space(30) }
+          spacing: theme.space(28)
 
           Repeater {
             model: [
-              { mode: "clock", label: "pill.clock" },
-              { mode: "pomodoro", label: "pill.pomodoro" },
-              { mode: "timer", label: "pill.timer" },
-              { mode: "stopwatch", label: "pill.stopwatch" }
+              { mode: "clock", key: "1", label: "pill.clock" },
+              { mode: "pomodoro", key: "2", label: "pill.pomodoro" },
+              { mode: "timer", key: "3", label: "pill.timer" },
+              { mode: "stopwatch", key: "4", label: "pill.stopwatch" }
             ]
 
-            delegate: Rectangle {
-              id: pill
+            delegate: Item {
+              id: tab
               required property var modelData
+              property bool current: root.mode === tab.modelData.mode
               property bool hovered: false
-              property bool current: root.mode === modelData.mode
+              width: tabRow.implicitWidth + theme.space(16)
+              height: tabRow.implicitHeight + theme.space(16)
 
-              radius: 999
-              color: pill.current ? "#1b2a33" : (pill.hovered ? "#1e1e26" : "#141419")
-              border.color: pill.current ? "#7dd3fc" : "#2a2a34"
-              border.width: 1
-              implicitWidth: pillLabel.implicitWidth + 32
-              implicitHeight: pillLabel.implicitHeight + 14
+              Row {
+                id: tabRow
+                anchors.centerIn: parent
+                spacing: theme.space(8)
 
-              Behavior on color {
-                ColorAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic }
+                ZenText {
+                  id: tabKey
+                  text: tab.modelData.key
+                  role: "label"
+                  tone: tab.current ? "accent" : (tab.hovered ? "primary" : "muted")
+                  anchors.baseline: tabLabel.baseline
+                }
+                ZenText {
+                  id: tabLabel
+                  text: strings.t(tab.modelData.label)
+                  role: "body"
+                  tone: tab.current ? "accent" : (tab.hovered ? "primary" : "secondary")
+                  font.weight: tab.current ? Font.DemiBold : Font.Normal
+                }
               }
 
-              PlainText {
-                id: pillLabel
-                anchors.centerIn: parent
-                text: strings.t(pill.modelData.label)
-                font.pixelSize: 13
-                font.letterSpacing: 2
-                font.family: Style.font.family
-                color: pill.current ? "#7dd3fc" : "#8a8a96"
+              Rectangle {
+                anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom }
+                width: tabRow.implicitWidth
+                height: Math.max(2, Math.round(2 * theme.fontScale))
+                color: tab.current ? theme.accent : "transparent"
               }
 
               MouseArea {
@@ -415,40 +414,35 @@ Item {
                 hoverEnabled: true
                 cursorShape: inactivity.zenActive ? Qt.BlankCursor : Qt.PointingHandCursor
                 onEntered: {
-                  pill.hovered = true
+                  tab.hovered = true
                   inactivity.wake()
                 }
-                onExited: pill.hovered = false
+                onExited: tab.hovered = false
                 onClicked: {
                   // First click on a faded HUD only reveals it.
                   if (root.actionLocked) {
                     inactivity.wake()
                     return
                   }
-                  root.setMode(pill.modelData.mode)
+                  root.setMode(tab.modelData.mode)
                 }
               }
             }
           }
         }
 
-        Rectangle {
+        Item {
           visible: root.timezoneText !== ""
-          anchors { top: parent.top; right: parent.right; topMargin: 36; rightMargin: 48 }
-          radius: 999
-          color: "#141419"
-          border.color: "#2a2a34"
-          border.width: 1
-          implicitWidth: zoneLabel.implicitWidth + 36
-          implicitHeight: zoneLabel.implicitHeight + 18
+          anchors { top: parent.top; right: parent.right; topMargin: theme.pageMargin; rightMargin: theme.pageMargin }
+          width: zoneLabel.implicitWidth
+          height: zoneLabel.implicitHeight
 
-          PlainText {
+          ZenText {
             id: zoneLabel
             anchors.centerIn: parent
             text: root.timezoneText
-            font.pixelSize: 14
-            font.family: Style.font.family
-            color: "#b6b6c2"
+            role: "label"
+            tone: "secondary"
           }
 
           MouseArea {
@@ -461,31 +455,11 @@ Item {
           }
         }
 
-        Row {
-          anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter; bottomMargin: 40 }
-          spacing: 32
-
-          PlainText {
-            text: strings.t("hint.dismiss")
-            font.pixelSize: 13
-            font.letterSpacing: 2
-            font.family: Style.font.family
-            color: "#55555f"
-          }
-          PlainText {
-            text: strings.t("hint.toggle")
-            font.pixelSize: 13
-            font.letterSpacing: 2
-            font.family: Style.font.family
-            color: "#55555f"
-          }
-          PlainText {
-            text: strings.t("hint.format")
-            font.pixelSize: 13
-            font.letterSpacing: 2
-            font.family: Style.font.family
-            color: "#55555f"
-          }
+        ZenText {
+          anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter; bottomMargin: theme.pageMargin }
+          text: root.hintText
+          role: "caption"
+          tone: "muted"
         }
       }
 
@@ -498,58 +472,43 @@ Item {
         Column {
           id: clockColumn
           anchors.centerIn: parent
-          spacing: 18
+          spacing: theme.space(16)
 
           Row {
             id: clockRow
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: 12
+            spacing: theme.space(10)
 
-            PlainText {
+            ZenText {
               id: clockLabel
               anchors.verticalCenter: parent.verticalCenter
               text: root.clockText
-              font.pixelSize: Math.min(panel.width * 0.16, 280)
-              font.weight: Font.Light
-              font.family: Style.font.family
-              color: "#f4f4f8"
+              role: "hero"
+              size: theme.heroSize(panel.width)
             }
-            PlainText {
+            ZenText {
               anchors.baseline: clockLabel.baseline
               text: root.secondsText
-              font.pixelSize: clockLabel.font.pixelSize * 0.32
+              size: clockLabel.font.pixelSize * 0.3
+              tone: "secondary"
               font.weight: Font.Light
-              font.family: Style.font.family
-              color: "#7c7c8a"
             }
-            Rectangle {
-              anchors.verticalCenter: parent.verticalCenter
+            ZenText {
+              anchors.baseline: clockLabel.baseline
               visible: root.hour12
-              radius: 10
-              color: "#141419"
-              implicitWidth: ampmLabel.implicitWidth + 24
-              implicitHeight: ampmLabel.implicitHeight + 14
-
-              PlainText {
-                id: ampmLabel
-                anchors.centerIn: parent
-                text: root.ampmText
-                font.pixelSize: clockLabel.font.pixelSize * 0.18
-                font.bold: true
-                font.letterSpacing: 2
-                font.family: Style.font.family
-                color: "#7dd3fc"
-              }
+              text: root.ampmText
+              size: clockLabel.font.pixelSize * 0.13
+              tone: "accent"
+              font.weight: Font.DemiBold
             }
           }
 
-          PlainText {
+          ZenText {
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.dateText
-            font.pixelSize: Math.max(18, Math.min(panel.width * 0.022, 34))
-            font.weight: Font.Light
-            font.family: Style.font.family
-            color: "#9a9aa6"
+            role: "heading"
+            tone: "secondary"
+            font.weight: Font.Normal
           }
         }
 

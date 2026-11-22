@@ -12,14 +12,12 @@ Item {
   property bool hudFaded: false
   property bool actionLocked: false
 
-  // Raised on any pointer interaction so the owner can wake Zen Inactivity.
   signal activity()
-  // Raised when the custom-minutes field or a control is used, so the owner
-  // can return focus to its global key catcher and keep Space / R / 1-4 live.
   signal focusRestored()
 
   readonly property bool textEntryActive: customInput.activeFocus
 
+  ZenTheme { id: theme }
   Commons.Translations {
     id: strings
     directory: Qt.resolvedUrl("i18n")
@@ -41,95 +39,74 @@ Item {
 
   Column {
     anchors.centerIn: parent
-    spacing: 18
+    spacing: theme.space(20)
 
-    // Secondary heading (fades with Zen Inactivity).
-    Row {
+    ZenText {
       anchors.horizontalCenter: parent.horizontalCenter
-      spacing: 14
+      text: strings.t("timer.label")
+      role: "heading"
+      tone: "accent"
       opacity: root.hudFaded ? 0 : 1
       Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
-      }
-
-      PlainText {
-        anchors.verticalCenter: parent.verticalCenter
-        text: "⧖"
-        font.pixelSize: 24
-        font.family: Style.font.family
-        color: "#7dd3fc"
-      }
-      PlainText {
-        anchors.verticalCenter: parent.verticalCenter
-        text: strings.t("timer.label")
-        font.pixelSize: 18
-        font.letterSpacing: 4
-        font.family: Style.font.family
-        color: "#7dd3fc"
+        NumberAnimation { duration: theme.duration; easing.type: Easing.OutCubic }
       }
     }
 
-    // Primary countdown digits — never faded.
-    PlainText {
+    ZenText {
       anchors.horizontalCenter: parent.horizontalCenter
       text: root.engine.formattedTime
-      font.pixelSize: Math.min(root.width * 0.16, 280)
-      font.weight: Font.Light
-      font.family: Style.font.family
-      color: "#f4f4f8"
+      role: "hero"
+      size: theme.heroSize(root.width)
     }
 
-    PlainText {
+    ZenText {
       anchors.horizontalCenter: parent.horizontalCenter
       text: root.durationLabel
+      role: "body"
+      tone: "secondary"
       opacity: root.hudFaded ? 0 : 1
       Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
+        NumberAnimation { duration: theme.duration; easing.type: Easing.OutCubic }
       }
-      font.pixelSize: 18
-      font.family: Style.font.family
-      color: "#9a9aa6"
     }
 
-    // Quick presets: 5m / 15m / 25m / 45m / 60m.
+    // Presets are labels with an active rule, not a row of identical cards.
     Row {
       anchors.horizontalCenter: parent.horizontalCenter
-      spacing: 10
-      topPadding: 6
+      spacing: theme.space(24)
+      topPadding: theme.space(8)
       opacity: root.hudFaded ? 0 : 1
       Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
+        NumberAnimation { duration: theme.duration; easing.type: Easing.OutCubic }
       }
 
       Repeater {
         model: root.engine.presets
 
-        delegate: Rectangle {
+        delegate: Item {
           id: preset
           required property int modelData
           property bool hovered: false
           property bool selected: !root.engine.customActive
             && root.engine.durationMinutes === preset.modelData
 
-          radius: 10
-          color: selected ? "#1b2a33" : (hovered ? "#1e1e26" : "#141419")
-          border.color: selected ? "#7dd3fc" : "#2a2a34"
-          border.width: 1
-          implicitWidth: presetLabel.implicitWidth + 30
-          implicitHeight: presetLabel.implicitHeight + 16
+          width: presetLabel.implicitWidth + theme.space(20)
+          height: presetLabel.implicitHeight + theme.space(16)
 
-          Behavior on color {
-            ColorAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic }
+          ZenText {
+            id: presetLabel
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            text: strings.t("timer.preset").arg(Commons.I18n.formatNumber(preset.modelData))
+            role: "label"
+            tone: preset.selected ? "accent" : (preset.hovered ? "primary" : "secondary")
           }
 
-          PlainText {
-            id: presetLabel
-            anchors.centerIn: parent
-            text: strings.t("timer.preset").arg(Commons.I18n.formatNumber(preset.modelData))
-            font.pixelSize: 14
-            font.letterSpacing: 1
-            font.family: Style.font.family
-            color: parent.selected ? "#7dd3fc" : "#b6b6c2"
+          Rectangle {
+            anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom }
+            width: presetLabel.implicitWidth
+            height: Math.max(2, Math.round(2 * theme.fontScale))
+            color: preset.selected ? theme.accent : "transparent"
           }
 
           MouseArea {
@@ -157,39 +134,39 @@ Item {
     // Custom minutes entry, validated by the engine to the 1-180 range.
     Row {
       anchors.horizontalCenter: parent.horizontalCenter
-      spacing: 12
+      spacing: theme.space(10)
       opacity: root.hudFaded ? 0 : 1
       Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
+        NumberAnimation { duration: theme.duration; easing.type: Easing.OutCubic }
       }
 
-      PlainText {
+      ZenText {
         anchors.verticalCenter: parent.verticalCenter
         text: strings.t("timer.custom.label")
-        font.pixelSize: 13
-        font.letterSpacing: 2
-        font.family: Style.font.family
-        color: "#8a8a96"
+        role: "label"
+        tone: "muted"
       }
 
       Rectangle {
         anchors.verticalCenter: parent.verticalCenter
-        width: 72
-        height: 34
-        radius: 8
-        color: "#141419"
-        border.color: customInput.activeFocus ? "#7dd3fc" : "#2a2a34"
+        width: theme.space(76)
+        height: theme.space(38)
+        radius: theme.radius
+        color: theme.surface
+        border.color: customInput.activeFocus ? theme.accent : theme.line
         border.width: 1
 
         // TextInput is plain text by nature (no rich-text rendering), so it
-        // satisfies the same safety rule as the PlainText display elements.
+        // satisfies the same safety rule as the ZenText display elements.
         TextInput {
           id: customInput
-          anchors { fill: parent; leftMargin: 10; rightMargin: 10 }
+          anchors { fill: parent; leftMargin: theme.space(6); rightMargin: theme.space(6) }
           text: String(root.engine.customMinutes)
-          color: "#f4f4f8"
-          font.pixelSize: 15
+          color: theme.textPrimary
+          font.pixelSize: theme.body
           font.family: Style.font.family
+          horizontalAlignment: TextInput.AlignHCenter
+          verticalAlignment: TextInput.AlignVCenter
           inputMethodHints: Qt.ImhDigitsOnly
           validator: IntValidator { bottom: root.engine.minMinutes; top: root.engine.maxMinutes }
           maximumLength: 3
@@ -205,32 +182,21 @@ Item {
         }
       }
 
-      PlainText {
+      ZenText {
         anchors.verticalCenter: parent.verticalCenter
         text: strings.t("timer.custom.unit")
-        font.pixelSize: 13
-        font.family: Style.font.family
-        color: "#8a8a96"
-      }
-
-      PlainText {
-        anchors.verticalCenter: parent.verticalCenter
-        text: strings.t("timer.custom.hint")
-        font.pixelSize: 12
-        font.letterSpacing: 1
-        font.family: Style.font.family
-        color: "#55555f"
+        role: "label"
+        tone: "muted"
       }
     }
 
-    // Play / Pause (Space) and Reset (R).
     Row {
       anchors.horizontalCenter: parent.horizontalCenter
-      spacing: 16
-      topPadding: 8
+      spacing: theme.space(12)
+      topPadding: theme.space(10)
       opacity: root.hudFaded ? 0 : 1
       Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
+        NumberAnimation { duration: theme.duration; easing.type: Easing.OutCubic }
       }
 
       HudButton {
@@ -244,7 +210,6 @@ Item {
           root.focusRestored()
         }
       }
-
       HudButton {
         faded: root.hudFaded
         locked: root.actionLocked
@@ -255,19 +220,6 @@ Item {
           root.focusRestored()
         }
       }
-    }
-
-    PlainText {
-      anchors.horizontalCenter: parent.horizontalCenter
-      text: strings.t("timer.hint")
-      opacity: root.hudFaded ? 0 : 1
-      Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
-      }
-      font.pixelSize: 13
-      font.letterSpacing: 2
-      font.family: Style.font.family
-      color: "#55555f"
     }
   }
 }
