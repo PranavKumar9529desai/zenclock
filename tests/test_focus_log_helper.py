@@ -90,6 +90,79 @@ class FocusLogHelperTest(unittest.TestCase):
             conn.close()
         self.assertEqual(count, 1)
 
+    def test_checkpoint_round_trip(self):
+        self.init()
+        saved = run_helper([{
+            "op": "save_checkpoint", "path": self.db,
+            "phase": "shortBreak", "remainingSeconds": 245,
+            "sessionNumber": 2, "completedFocusSessions": 2,
+        }])[0]
+        self.assertTrue(saved["ok"])
+
+        loaded = run_helper([{"op": "load_checkpoint", "path": self.db}])[0]
+        self.assertTrue(loaded["ok"])
+        checkpoint = dict(loaded["checkpoint"])
+        self.assertIsInstance(checkpoint.pop("savedAt"), int)
+        self.assertEqual(checkpoint, {
+            "phase": "shortBreak", "remainingSeconds": 245,
+            "sessionNumber": 2, "completedFocusSessions": 2,
+        })
+
+    def test_saving_twice_upserts_one_checkpoint(self):
+        self.init()
+        run_helper([
+            {"op": "save_checkpoint", "path": self.db, "phase": "focus",
+             "remainingSeconds": 900, "sessionNumber": 1, "completedFocusSessions": 0},
+            {"op": "save_checkpoint", "path": self.db, "phase": "shortBreak",
+             "remainingSeconds": 120, "sessionNumber": 3, "completedFocusSessions": 3},
+        ])
+
+        conn = sqlite3.connect(self.db)
+        try:
+            rows = conn.execute(
+                "SELECT phase, remaining_seconds, session_number, completed_focus_sessions "
+                "FROM checkpoint").fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(rows, [("shortBreak", 120, 3, 3)])
+
+    def test_months_old_checkpoint_still_loads(self):
+        self.init()
+        old = 1730000000123  # months before any plausible policy TTL
+        conn = sqlite3.connect(self.db)
+        try:
+            conn.execute(
+                "INSERT INTO checkpoint (singleton, phase, remaining_seconds, "
+                "session_number, completed_focus_sessions, saved_at) "
+                "VALUES (1, 'focus', 612, 3, 2, ?)", (old,))
+            conn.commit()
+        finally:
+            conn.close()
+
+        loaded = run_helper([{"op": "load_checkpoint", "path": self.db}])[0]
+        self.assertEqual(loaded["checkpoint"], {
+            "phase": "focus", "remainingSeconds": 612,
+            "sessionNumber": 3, "completedFocusSessions": 2, "savedAt": old,
+        })
+
+    def test_clear_checkpoint_removes_the_row(self):
+        self.init()
+        save = {
+            "op": "save_checkpoint", "path": self.db, "phase": "focus",
+            "remainingSeconds": 900, "sessionNumber": 1, "completedFocusSessions": 0,
+        }
+        responses = run_helper([save, {"op": "clear_checkpoint", "path": self.db},
+                                {"op": "load_checkpoint", "path": self.db}])
+
+        self.assertTrue(responses[1]["ok"])
+        self.assertIsNone(responses[2]["checkpoint"])
+        conn = sqlite3.connect(self.db)
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM checkpoint").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(count, 0)
+
     def test_status_reports_path_version_counts_and_storage_status(self):
         self.init()
         responses = run_helper([

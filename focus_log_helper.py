@@ -84,6 +84,23 @@ def ensure_schema(conn):
             )
 
 
+def checkpoint_for(conn):
+    """Read the one checkpoint row, or None. No age filter: checkpoints never expire."""
+    row = conn.execute(
+        "SELECT phase, remaining_seconds, session_number, "
+        "completed_focus_sessions, saved_at FROM checkpoint WHERE singleton = 1"
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "phase": row[0],
+        "remainingSeconds": row[1],
+        "sessionNumber": row[2],
+        "completedFocusSessions": row[3],
+        "savedAt": row[4],
+    }
+
+
 def status_for(conn, path):
     version = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
     journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
@@ -98,6 +115,7 @@ def status_for(conn, path):
         "version": version,
         "journalMode": journal_mode,
         "counts": counts,
+        "checkpoint": checkpoint_for(conn),
     }
 
 
@@ -126,6 +144,29 @@ def handle(command):
             response = status_for(conn, path)
             response["inserted"] = 1 if inserted > 0 else 0
         elif op == "status":
+            response = status_for(conn, path)
+        elif op == "save_checkpoint":
+            # One constant-size row: a later save replaces the earlier one.
+            with conn:
+                conn.execute(
+                    "INSERT INTO checkpoint (singleton, phase, remaining_seconds, "
+                    "session_number, completed_focus_sessions, saved_at) "
+                    "VALUES (1, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(singleton) DO UPDATE SET "
+                    "phase=excluded.phase, remaining_seconds=excluded.remaining_seconds, "
+                    "session_number=excluded.session_number, "
+                    "completed_focus_sessions=excluded.completed_focus_sessions, "
+                    "saved_at=excluded.saved_at",
+                    (command["phase"], int(command["remainingSeconds"]),
+                     int(command["sessionNumber"]),
+                     int(command["completedFocusSessions"]), now_ms()),
+                )
+            response = status_for(conn, path)
+        elif op == "load_checkpoint":
+            response = status_for(conn, path)
+        elif op == "clear_checkpoint":
+            with conn:
+                conn.execute("DELETE FROM checkpoint WHERE singleton = 1")
             response = status_for(conn, path)
         else:
             return {"op": op, "ok": False, "error": "unknown op"}

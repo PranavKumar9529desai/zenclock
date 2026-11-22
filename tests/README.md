@@ -40,9 +40,11 @@ mid-run from the desktop. Teardown uses IPC `hide`, never synthetic keys.
 `state()` also reports `screen`, `cueAvailable` and `serviceReady`. The plugin
 exposes these debug methods through shell IPC, used only by `smoke.sh`:
 `debugResetAll`, `debugAdvancePhase`, `debugSetTimerPreset`,
-`debugSetCustomMinutes`, `debugExpireTimer`, `debugSetEventCapture` and
-`debugEventsJson`. They let the deadline-based state machines be driven
-without waiting through a 100-minute cycle.
+`debugSetCustomMinutes`, `debugExpireTimer`, `debugSetEventCapture`,
+`debugEventsJson` and `debugRestoreCheckpoint`. They let the deadline-based
+state machines be driven without waiting through a 100-minute cycle.
+`debugRestoreCheckpoint` re-runs the load path; `checkpoint-resume.sh` observes
+the result through `state()` JSON and the SQLite file, never the visual tree.
 
 `debugSetEventCapture` enables a **test-only** event log. V1 stores no events in
 production: the service simply forwards the engines' signals, so a V2 database

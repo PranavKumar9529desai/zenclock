@@ -17,6 +17,11 @@ Item {
   property int focusRecordCount: 0
   property int cycleRecordCount: 0
   property int countdownRecordCount: 0
+  property var checkpoint: null
+
+  // Emitted once per load request, with null when no checkpoint was saved.
+  // The service uses it to restore the Pomodoro engine in a paused state.
+  signal checkpointLoaded(var snapshot)
 
   // Resolved relative to this file so the helper travels with the plugin.
   readonly property string helperPath: {
@@ -54,6 +59,9 @@ Item {
       root.cycleRecordCount = response.counts.cycle || 0
       root.countdownRecordCount = response.counts.countdown || 0
     }
+    if ("checkpoint" in response) root.checkpoint = response.checkpoint
+    if (response.op === "load_checkpoint")
+      root.checkpointLoaded(response.checkpoint || null)
   }
 
   // Writes one idempotent Focus Record for a completed Focus Session.
@@ -66,6 +74,22 @@ Item {
       timestamp: timestamp
     })
   }
+
+  // Checkpoint writes go through the same one-row helper. Pause and the 30s
+  // cadence both call saveCheckpoint; Reset calls clearCheckpoint.
+  function saveCheckpoint(phase, remainingSeconds, sessionNumber, completedFocusSessions) {
+    root.send({
+      op: "save_checkpoint",
+      path: root.dbPath,
+      phase: phase,
+      remainingSeconds: remainingSeconds,
+      sessionNumber: sessionNumber,
+      completedFocusSessions: completedFocusSessions
+    })
+  }
+
+  function loadCheckpoint() { root.send({ op: "load_checkpoint", path: root.dbPath }) }
+  function clearCheckpoint() { root.send({ op: "clear_checkpoint", path: root.dbPath }) }
 
   function refresh() { root.send({ op: "status", path: root.dbPath }) }
 
@@ -106,9 +130,10 @@ Item {
   }
 
   Component.onCompleted: {
-    // The helper creates the schema on first use, so an init command and an
-    // early record are both safe; send() queues them until the process starts.
+    // The helper creates the schema on first use, so init, load and an early
+    // record are all safe; send() queues them until the process starts.
     root.send({ op: "init", path: root.dbPath })
+    root.loadCheckpoint()
     helper.running = true
   }
 }
