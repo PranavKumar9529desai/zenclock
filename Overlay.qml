@@ -120,6 +120,10 @@ Item {
   }
   function debugExpireTimer() { if (root.service) root.service.debugExpireTimer() }
   function debugEventsJson() { return root.service ? root.service.debugEventsJson() : "[]" }
+  function debugCueCount() { return root.service ? root.service.debugCueCount() : 0 }
+  function debugSelectFocusLogAdapter(spec) {
+    if (root.service) root.service.debugSelectFocusLogAdapter(spec || "production")
+  }
   function debugSetEventCapture(enabled) {
     if (root.service)
       root.service.debugEventCapture = (enabled === true || enabled === "true")
@@ -155,7 +159,8 @@ Item {
         remaining: root.service.pomodoroEngine.formattedTime,
         session: root.service.pomodoroEngine.sessionNumber,
         running: root.service.pomodoroEngine.running,
-        cycleHalted: root.service.pomodoroEngine.cycleHalted
+        cycleHalted: root.service.pomodoroEngine.cycleHalted,
+        partiallyElapsed: root.service.pomodoroPartiallyElapsed
       } : null,
       timer: root.mode === "timer" && root.service ? {
         remaining: root.service.timerEngine.formattedTime,
@@ -169,7 +174,11 @@ Item {
         elapsedSeconds: root.service.stopwatchEngine.elapsedSeconds,
         elapsedMilliseconds: root.service.stopwatchEngine.elapsedMs,
         running: root.service.stopwatchEngine.running
-      } : null
+      } : null,
+      // The adapter owns its state payload; parse it verbatim so state() and
+      // the adapter cannot drift (and checkpoint position stays in sync).
+      focusLog: root.service && root.service.focusLog
+        ? JSON.parse(root.service.focusLog.stateJson()) : null
     })
   }
 

@@ -18,11 +18,16 @@ Item {
   // "focus" | "shortBreak" | "longBreak" | "cycleComplete"
   property string phase: "focus"
   property int completedFocusSessions: 0  // 0..4 within the current cycle
-  // 1..4 within the current cycle, derived so it can never disagree with the
-  // four progress glyphs in the view.
-  readonly property int sessionNumber: root.phase === "focus"
-    ? Math.min(root.sessionsPerCycle, root.completedFocusSessions + 1)
-    : Math.max(1, Math.min(root.sessionsPerCycle, root.completedFocusSessions))
+  // 1..4 within the current cycle. Normally derived so it can never disagree
+  // with the four progress glyphs; a restored checkpoint carries its own
+  // session_number, which overrides the derivation after an edit or mismatch
+  // until the next real phase transition (ADR 0003).
+  property int restoredSessionNumber: 0
+  readonly property int sessionNumber: root.restoredSessionNumber > 0
+    ? Math.min(root.sessionsPerCycle, Math.max(1, root.restoredSessionNumber))
+    : (root.phase === "focus"
+      ? Math.min(root.sessionsPerCycle, root.completedFocusSessions + 1)
+      : Math.max(1, Math.min(root.sessionsPerCycle, root.completedFocusSessions)))
   property int remainingSeconds: focusMinutes * 60
   property bool running: false
   property real deadlineMs: 0             // wall-clock deadline for current phase
@@ -62,7 +67,10 @@ Item {
     return root.focusMinutes
   }
 
+  function clearRestoredSession() { root.restoredSessionNumber = 0 }
+
   function beginPhase(p, seconds) {
+    root.clearRestoredSession()
     root.phase = p
     root.remainingSeconds = seconds
     root.running = true
@@ -105,6 +113,7 @@ Item {
   // End of a Pomodoro Cycle: emit the boundary event and halt on a prompt.
   // Never auto-start the next cycle.
   function haltCycle() {
+    root.clearRestoredSession()
     var cycleId = root.runId + "-c" + (root.totalCycles + 1)
     root.totalCycles++
     root.cycleFinished(cycleId, Date.now())
@@ -112,6 +121,26 @@ Item {
     root.remainingSeconds = 0
     root.deadlineMs = 0
     root.running = false
+  }
+
+  // Ticket #19 / ADR 0003: the single exception to ADR 0002's no-engine-changes
+  // promise. Restores a checkpoint as a PAUSED, partially elapsed phase so the
+  // existing primary button already reads "Resume". runId and the lifetime
+  // counters are deliberately left fresh; only cycle position is restored.
+  function restoreSnapshot(phase, remainingSeconds, sessionNumber, completedFocusSessions) {
+    if (phase !== "focus" && phase !== "shortBreak" && phase !== "longBreak") return false
+    if (!(remainingSeconds > 0) || root.running) return false
+    root.phase = phase
+    root.completedFocusSessions = Math.max(0,
+      Math.min(root.sessionsPerCycle, completedFocusSessions))
+    // The persisted position wins over the derived one: an edited checkpoint
+    // restores exactly what was stored, not a recomputed approximation.
+    root.restoredSessionNumber = sessionNumber > 0
+      ? Math.min(root.sessionsPerCycle, Math.max(1, sessionNumber)) : 0
+    root.remainingSeconds = remainingSeconds
+    root.deadlineMs = 0
+    root.running = false
+    return true
   }
 
   function start() {
@@ -146,6 +175,7 @@ Item {
   // At the cycle prompt it clears the halt and prepares a fresh, paused
   // Focus Session so the user can confirm with Play / Space.
   function reset() {
+    root.clearRestoredSession()
     if (root.phase === "cycleComplete") {
       root.completedFocusSessions = 0
       root.phase = "focus"
@@ -179,6 +209,7 @@ Item {
   }
 
   function startNewCycle() {
+    root.clearRestoredSession()
     root.completedFocusSessions = 0
     root.beginPhase("focus", root.focusMinutes * 60)
   }

@@ -92,17 +92,65 @@ so a session paused months ago is still resumable.
 
 | column | type | meaning |
 |---|---|---|
-| `key` | `TEXT PRIMARY KEY` | `checkpoint_ttl_days` or `record_retention_days` |
-| `value` | `INTEGER NOT NULL` | `0` means keep forever (both default to 0) |
+| `key` | `TEXT PRIMARY KEY` | `record_retention_days` or `checkpoint_ttl_days` |
+| `value` | `INTEGER NOT NULL` | retention in whole days; `0` means keep forever |
 
-Pruning is an explicit operation, never automatic. To see what would be removed:
+| key | default | meaning |
+|---|---|---|
+| `record_retention_days` | `0` | age past which records are eligible for a manual prune |
+| `checkpoint_ttl_days` | `0` | checkpoint retention; `0` means a paused session never expires |
+
+Both rows are created on first use with value `0` (keep forever). Edit a value
+with an ordinary SQLite client if you want finite retention; there is no
+settings key and no retention UI.
+
+## Manual prune
+
+**No prune runs automatically** — not at startup, not at shutdown, not on any
+timer. Cleaning up is an operation you choose to run yourself. It removes only
+**records** (Focus Records, Cycle Records and Countdown Records) whose
+`recorded_at` is older than `record_retention_days`. It **never** deletes the
+`checkpoint`, regardless of its age: a Focus Session paused months ago must
+still be resumable. With the default `record_retention_days = 0` the prune
+removes nothing at all.
+
+To see what a prune would remove (a keep-forever policy reports zero for every
+kind):
 
 ```sql
-SELECT 'focus_record' AS kind, count(*) AS rows
-FROM focus_record
-WHERE recorded_at < strftime('%s','now') * 1000
-      - (SELECT value FROM focus_log_policy WHERE key = 'record_retention_days') * 86400000;
+WITH policy AS (
+  SELECT CASE WHEN value > 0
+              THEN (strftime('%s','now') - value * 86400) * 1000
+         END AS cutoff
+  FROM focus_log_policy WHERE key = 'record_retention_days'
+)
+SELECT 'focus_record' AS kind, COUNT(*) AS would_remove
+FROM focus_record, policy WHERE recorded_at < policy.cutoff
+UNION ALL
+SELECT 'cycle_record', COUNT(*) FROM cycle_record, policy
+WHERE recorded_at < policy.cutoff
+UNION ALL
+SELECT 'countdown_record', COUNT(*) FROM countdown_record, policy
+WHERE recorded_at < policy.cutoff;
 ```
+
+To actually prune, run the same deletion for each record table:
+
+```sql
+DELETE FROM focus_record
+WHERE recorded_at < (
+  SELECT CASE WHEN value > 0
+              THEN (strftime('%s','now') - value * 86400) * 1000
+         END
+  FROM focus_log_policy WHERE key = 'record_retention_days'
+);
+-- repeat the identical DELETE for cycle_record and countdown_record
+```
+
+The helper implements this same operation as the `prune` command
+(`{"op": "prune", "path": "..."}` on its newline-delimited JSON interface),
+reporting how many rows it removed from each record table. It touches only
+those three tables: neither the checkpoint nor either policy value is changed.
 
 ## Canonical metric
 
