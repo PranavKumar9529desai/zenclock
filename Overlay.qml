@@ -12,6 +12,8 @@ Item {
   // Injected by the Omarchy shell's overlay loader.
   property var shell: null
   property var manifest: null
+  // The shell injects the plugin's service; fall back if the loader ran first.
+  property var service: null
   property bool opened: false
   property bool openRequested: false
   property string mode: "clock" // "clock" | "pomodoro" | "timer" | "stopwatch"
@@ -25,12 +27,19 @@ Item {
   property string zoneAbbr: ""
   property var targetScreen: Quickshell.screens[0] || null
 
-  // Always-loaded state machines: their deadline timers keep advancing while
-  // the overlay is dismissed (manifest keepLoaded: true), so a countdown still
-  // chimes and a stopwatch stays accurate in the background.
-  PomodoroEngine { id: pomodoroEngine }
-  TimerEngine { id: timerEngine }
-  StopwatchEngine { id: stopwatchEngine }
+  // All timers live in Service.qml, which the shell keeps loaded even while
+  // this overlay is hidden — that is what makes background ticking and chimes
+  // reliable. This file only renders service state and forwards input.
+  Timer {
+    interval: 200
+    repeat: true
+    running: root.service === null
+    onTriggered: {
+      if (root.shell && typeof root.shell.serviceFor === "function"
+        && root.manifest && root.manifest.id)
+        root.service = root.shell.serviceFor(root.manifest.id)
+    }
+  }
 
   Commons.Translations {
     id: strings
@@ -97,14 +106,22 @@ Item {
   // Test-only seams driven by tests/smoke.sh through `omarchy-shell shell call`.
   function debugResetAll() {
     root.setMode("clock")
-    pomodoroEngine.reset()
-    timerEngine.setPreset(5)
-    stopwatchEngine.reset()
+    root.hour12 = true
+    if (root.service) root.service.debugResetAll()
   }
-  function debugAdvancePhase() { pomodoroEngine.advance() }
-  function debugSetTimerPreset(minutes) { return timerEngine.setPreset(minutes) }
-  function debugSetCustomMinutes(minutes) { return timerEngine.setCustomMinutes(minutes) }
-  function debugExpireTimer() { timerEngine.complete() }
+  function debugAdvancePhase() { if (root.service) root.service.debugAdvancePhase() }
+  function debugSetTimerPreset(minutes) {
+    return root.service ? root.service.debugSetTimerPreset(minutes) : false
+  }
+  function debugSetCustomMinutes(minutes) {
+    return root.service ? root.service.debugSetCustomMinutes(minutes) : false
+  }
+  function debugExpireTimer() { if (root.service) root.service.debugExpireTimer() }
+  function debugEventsJson() { return root.service ? root.service.debugEventsJson() : "[]" }
+  function debugSetEventCapture(enabled) {
+    if (root.service)
+      root.service.debugEventCapture = (enabled === true || enabled === "true")
+  }
 
   function toggleFormat() {
     root.hour12 = !root.hour12
@@ -129,25 +146,26 @@ Item {
       cueAvailable: root.cueAvailable,
       zenActive: inactivity.zenActive,
       mode: root.mode,
-      pomodoro: root.mode === "pomodoro" ? {
-        phase: pomodoroEngine.phase,
-        remaining: pomodoroEngine.formattedTime,
-        session: pomodoroEngine.sessionNumber,
-        running: pomodoroEngine.running,
-        cycleHalted: pomodoroEngine.cycleHalted
+      serviceReady: root.service !== null,
+      pomodoro: root.mode === "pomodoro" && root.service ? {
+        phase: root.service.pomodoroEngine.phase,
+        remaining: root.service.pomodoroEngine.formattedTime,
+        session: root.service.pomodoroEngine.sessionNumber,
+        running: root.service.pomodoroEngine.running,
+        cycleHalted: root.service.pomodoroEngine.cycleHalted
       } : null,
-      timer: root.mode === "timer" ? {
-        remaining: timerEngine.formattedTime,
-        remainingSeconds: timerEngine.remainingSeconds,
-        running: timerEngine.running,
-        duration: timerEngine.durationMinutes,
-        custom: timerEngine.customActive
+      timer: root.mode === "timer" && root.service ? {
+        remaining: root.service.timerEngine.formattedTime,
+        remainingSeconds: root.service.timerEngine.remainingSeconds,
+        running: root.service.timerEngine.running,
+        duration: root.service.timerEngine.durationMinutes,
+        custom: root.service.timerEngine.customActive
       } : null,
-      stopwatch: root.mode === "stopwatch" ? {
-        elapsed: stopwatchEngine.formattedTime,
-        elapsedSeconds: stopwatchEngine.elapsedSeconds,
-        elapsedMilliseconds: stopwatchEngine.elapsedMs,
-        running: stopwatchEngine.running
+      stopwatch: root.mode === "stopwatch" && root.service ? {
+        elapsed: root.service.stopwatchEngine.formattedTime,
+        elapsedSeconds: root.service.stopwatchEngine.elapsedSeconds,
+        elapsedMilliseconds: root.service.stopwatchEngine.elapsedMs,
+        running: root.service.stopwatchEngine.running
       } : null
     })
   }
@@ -247,7 +265,8 @@ Item {
         }
         // While the custom-minutes field has focus it owns its keystrokes, so
         // typing digits never switches modes or toggles the countdown.
-        if (root.mode === "timer" && timerView.textEntryActive) return
+        if (root.mode === "timer" && timerLoader.item
+          && timerLoader.item.textEntryActive) return
 
         if (event.key === Qt.Key_T) {
           root.toggleFormat()
@@ -264,23 +283,23 @@ Item {
         } else if (event.key === Qt.Key_4) {
           root.setMode("stopwatch")
           event.accepted = true
-        } else if (root.mode === "pomodoro" && event.key === Qt.Key_Space) {
-          pomodoroEngine.toggle()
+        } else if (root.service && root.mode === "pomodoro" && event.key === Qt.Key_Space) {
+          root.service.pomodoroEngine.toggle()
           event.accepted = true
-        } else if (root.mode === "pomodoro" && event.key === Qt.Key_R) {
-          pomodoroEngine.reset()
+        } else if (root.service && root.mode === "pomodoro" && event.key === Qt.Key_R) {
+          root.service.pomodoroEngine.reset()
           event.accepted = true
-        } else if (root.mode === "timer" && event.key === Qt.Key_Space) {
-          timerEngine.toggle()
+        } else if (root.service && root.mode === "timer" && event.key === Qt.Key_Space) {
+          root.service.timerEngine.toggle()
           event.accepted = true
-        } else if (root.mode === "timer" && event.key === Qt.Key_R) {
-          timerEngine.reset()
+        } else if (root.service && root.mode === "timer" && event.key === Qt.Key_R) {
+          root.service.timerEngine.reset()
           event.accepted = true
-        } else if (root.mode === "stopwatch" && event.key === Qt.Key_Space) {
-          stopwatchEngine.toggle()
+        } else if (root.service && root.mode === "stopwatch" && event.key === Qt.Key_Space) {
+          root.service.stopwatchEngine.toggle()
           event.accepted = true
-        } else if (root.mode === "stopwatch" && event.key === Qt.Key_R) {
-          stopwatchEngine.reset()
+        } else if (root.service && root.mode === "stopwatch" && event.key === Qt.Key_R) {
+          root.service.stopwatchEngine.reset()
           event.accepted = true
         }
       }
@@ -512,30 +531,48 @@ Item {
         }
       }
 
-      PomodoroView {
-        visible: root.mode === "pomodoro"
+      Loader {
+        active: root.service !== null
         anchors.fill: parent
-        engine: pomodoroEngine
-        hudFaded: inactivity.zenActive
-        onActivity: inactivity.wake()
+        sourceComponent: Component {
+          PomodoroView {
+            visible: root.mode === "pomodoro"
+            anchors.fill: parent
+            engine: root.service.pomodoroEngine
+            hudFaded: inactivity.zenActive
+            onActivity: inactivity.wake()
+          }
+        }
       }
 
-      TimerView {
-        id: timerView
-        visible: root.mode === "timer"
+      Loader {
+        id: timerLoader
+        active: root.service !== null
         anchors.fill: parent
-        engine: timerEngine
-        hudFaded: inactivity.zenActive
-        onActivity: inactivity.wake()
-        onFocusRestored: keyCatcher.forceActiveFocus()
+        sourceComponent: Component {
+          TimerView {
+            visible: root.mode === "timer"
+            anchors.fill: parent
+            engine: root.service.timerEngine
+            hudFaded: inactivity.zenActive
+            onActivity: inactivity.wake()
+            onFocusRestored: keyCatcher.forceActiveFocus()
+          }
+        }
       }
 
-      StopwatchView {
-        visible: root.mode === "stopwatch"
+      Loader {
+        active: root.service !== null
         anchors.fill: parent
-        engine: stopwatchEngine
-        hudFaded: inactivity.zenActive
-        onActivity: inactivity.wake()
+        sourceComponent: Component {
+          StopwatchView {
+            visible: root.mode === "stopwatch"
+            anchors.fill: parent
+            engine: root.service.stopwatchEngine
+            hudFaded: inactivity.zenActive
+            onActivity: inactivity.wake()
+          }
+        }
       }
     }
   }

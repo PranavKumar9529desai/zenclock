@@ -6,9 +6,10 @@
   "author": "Pranav",
   "license": "MIT",
   "description": "Distraction-free fullscreen clock and focus timer overlay for Omarchy.",
-  "kinds": ["overlay"],
+  "kinds": ["overlay", "service"],
   "keepLoaded": true,
   "entryPoints": {
-    "overlay": "Overlay.qml"
+    "overlay": "Overlay.qml",
+    "service": "Service.qml"
   }
 }

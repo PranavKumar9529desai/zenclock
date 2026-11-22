@@ -31,17 +31,23 @@ break them.
 | `zc_assert_eq` / `zc_assert_contains` | Assertions |
 
 `zc_key` refuses to inject anything unless `state().opened` is true, so a
-failed run cannot type into an unrelated focused window. Teardown uses IPC
-`hide`, never synthetic keys.
+failed run cannot type into an unrelated focused window. `zc_press` re-summons
+the overlay first, which keeps the suite resilient to someone dismissing it
+mid-run from the desktop. Teardown uses IPC `hide`, never synthetic keys.
 
 ## Test-only plugin seams
 
-`state()` also reports `screen` and `cueAvailable`. The plugin exposes five
-debug methods through shell IPC, used only by `smoke.sh`: `debugResetAll`,
-`debugAdvancePhase`, `debugSetTimerPreset`, `debugSetCustomMinutes`, and
-`debugExpireTimer`. They let the deadline-based state machines be driven
-without waiting through a 100-minute cycle. No analytics or event storage is
-added by these methods.
+`state()` also reports `screen`, `cueAvailable` and `serviceReady`. The plugin
+exposes these debug methods through shell IPC, used only by `smoke.sh`:
+`debugResetAll`, `debugAdvancePhase`, `debugSetTimerPreset`,
+`debugSetCustomMinutes`, `debugExpireTimer`, `debugSetEventCapture` and
+`debugEventsJson`. They let the deadline-based state machines be driven
+without waiting through a 100-minute cycle.
+
+`debugSetEventCapture` enables a **test-only** event log. V1 stores no events in
+production: the service simply forwards the engines' signals, so a V2 database
+adapter can connect at that seam. The test adapter reads the captured events
+with `zc_events` and asserts their type and metadata.
 
 Synthetic pointer motion is not injected: this machine's Hyprland build cannot
 move the cursor without disturbing keyboard focus, so pointer-driven Zen wake
