@@ -50,7 +50,6 @@ Item {
   InactivityController {
     id: inactivity
     active: root.opened
-    target: hud
   }
 
   function pad2(value) {
@@ -145,6 +144,7 @@ Item {
       screen: root.targetScreen ? root.targetScreen.name : "",
       cueAvailable: root.cueAvailable,
       zenActive: inactivity.zenActive,
+      hudOpacity: Math.round(hud.opacity * 100) / 100,
       mode: root.mode,
       serviceReady: root.service !== null,
       pomodoro: root.mode === "pomodoro" && root.service ? {
@@ -310,7 +310,18 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: inactivity.zenActive ? Qt.BlankCursor : Qt.ArrowCursor
-        onPositionChanged: inactivity.wake()
+        property real lastX: -1
+        property real lastY: -1
+        // Ignore synthetic hover events caused by the HUD fading/changing
+        // cursor; only real pointer movement should wake Zen Inactivity.
+        onPositionChanged: {
+          var p = mapToGlobal(mouse.x, mouse.y)
+          if (p.x !== lastX || p.y !== lastY) {
+            lastX = p.x
+            lastY = p.y
+            inactivity.wake()
+          }
+        }
         onPressed: inactivity.wake()
         onReleased: inactivity.wake()
         onClicked: inactivity.wake()
@@ -322,6 +333,13 @@ Item {
       Item {
         id: hud
         anchors.fill: parent
+        opacity: inactivity.zenActive ? 0 : 1
+        Behavior on opacity {
+          NumberAnimation {
+            duration: Style.duration(inactivity.zenActive ? 120 : 180)
+            easing.type: Easing.OutCubic
+          }
+        }
 
         Row {
           anchors { top: parent.top; left: parent.left; topMargin: 42; leftMargin: 48 }
@@ -389,11 +407,17 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: inactivity.zenActive ? Qt.BlankCursor : Qt.PointingHandCursor
-                onEntered: pill.hovered = true
-                onExited: pill.hovered = false
-                onPositionChanged: inactivity.wake()
-                onClicked: {
+                onEntered: {
+                  pill.hovered = true
                   inactivity.wake()
+                }
+                onExited: pill.hovered = false
+                onClicked: {
+                  // First click on a faded HUD only reveals it.
+                  if (inactivity.zenActive) {
+                    inactivity.wake()
+                    return
+                  }
                   root.setMode(pill.modelData.mode)
                 }
               }
@@ -424,7 +448,7 @@ Item {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: inactivity.zenActive ? Qt.BlankCursor : Qt.ArrowCursor
-            onPositionChanged: inactivity.wake()
+            onEntered: inactivity.wake()
             onClicked: inactivity.wake()
           }
         }
@@ -525,7 +549,10 @@ Item {
           anchors.fill: parent
           cursorShape: inactivity.zenActive ? Qt.BlankCursor : Qt.PointingHandCursor
           onClicked: {
-            inactivity.wake()
+            if (inactivity.zenActive) {
+              inactivity.wake()
+              return
+            }
             root.toggleFormat()
           }
         }

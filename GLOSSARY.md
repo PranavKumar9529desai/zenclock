@@ -29,6 +29,26 @@ A 30-minute extended rest period that occurs only upon completing a full 4-sessi
 
 _Avoid_: Extended rest, big break
 
+### Focus Log
+The user's personal account of focus work, accumulating one entry each time a Focus Session or Pomodoro Cycle completes.
+
+_Avoid_: History, analytics, telemetry, event log
+
+### Focus Record
+A single completed Focus Session as it appears in the Focus Log.
+
+_Avoid_: Tick, sample, session log, work interval
+
+### Countdown Record
+A single completed Timer countdown as it appears in the Focus Log.
+
+_Avoid_: Timer event, work session
+
+### Cycle Record
+A single completed Pomodoro Cycle as it appears in the Focus Log.
+
+_Avoid_: Cycle event, round, set
+
 ### Zen Inactivity
 A clean presentation state entered after 3 seconds of user inactivity where HUD navigation, action buttons, and cursor fade away, leaving only primary time digits visible.
 
