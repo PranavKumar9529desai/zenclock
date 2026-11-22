@@ -42,6 +42,14 @@ Item {
     function onFocusSessionCompleted(sessionId, durationMinutes, timestamp) {
       focusLog.recordFocus(sessionId, durationMinutes, timestamp)
     }
+
+    function onCycleFinished(cycleId, timestamp) {
+      focusLog.recordCycle(cycleId, timestamp)
+    }
+
+    function onCountdownCompleted(durationMinutes, timestamp) {
+      focusLog.recordCountdown(durationMinutes, timestamp)
+    }
   }
 
   Connections {
@@ -94,5 +102,13 @@ Item {
   function debugRedeliverFocus(payload) {
     var event = JSON.parse(payload)
     root.focusSessionCompleted(event.sessionId, event.durationMinutes, event.timestamp)
+  }
+  function debugRedeliverCycle(payload) {
+    var event = JSON.parse(payload)
+    root.cycleFinished(event.cycleId, event.timestamp)
+  }
+  function debugRedeliverCountdown(payload) {
+    var event = JSON.parse(payload)
+    root.countdownCompleted(event.durationMinutes, event.timestamp)
   }
 }
