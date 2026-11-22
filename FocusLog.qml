@@ -76,6 +76,27 @@ Item {
     })
   }
 
+  // Writes one idempotent Cycle Record for a completed Pomodoro Cycle.
+  function recordCycle(cycleId, timestamp) {
+    root.send({
+      op: "record_cycle",
+      path: root.dbPath,
+      id: cycleId,
+      timestamp: timestamp
+    })
+  }
+
+  // Writes one idempotent Countdown Record for a completed Timer countdown.
+  // The helper derives the deterministic key from timestamp and duration.
+  function recordCountdown(durationMinutes, timestamp) {
+    root.send({
+      op: "record_countdown",
+      path: root.dbPath,
+      durationMinutes: durationMinutes,
+      timestamp: timestamp
+    })
+  }
+
   function refresh() { root.send({ op: "status", path: root.dbPath }) }
 
   // Test-only: point writes at an isolated database so the degradation smoke

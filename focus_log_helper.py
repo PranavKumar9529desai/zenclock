@@ -70,6 +70,11 @@ def degraded(op, reason):
     return {"op": op, "ok": False, "status": "degraded", "error": str(reason)}
 
 
+def countdown_id(recorded_at, duration_minutes):
+    """Deterministic key: countdownCompleted carries no ID of its own."""
+    return "zc-cd-%d-%d" % (recorded_at, duration_minutes)
+
+
 def connect(path):
     parent = os.path.dirname(os.path.abspath(path))
     os.makedirs(parent, exist_ok=True)
@@ -130,6 +135,28 @@ def handle(command):
                     "(id, duration_minutes, recorded_at) VALUES (?, ?, ?)",
                     (command["id"], int(command["durationMinutes"]),
                      int(command["timestamp"])),
+                )
+                inserted = cursor.rowcount
+            response = status_for(conn, path)
+            response["inserted"] = 1 if inserted > 0 else 0
+        elif op == "record_cycle":
+            with conn:
+                cursor = conn.execute(
+                    "INSERT OR IGNORE INTO cycle_record (id, recorded_at) "
+                    "VALUES (?, ?)",
+                    (command["id"], int(command["timestamp"])),
+                )
+                inserted = cursor.rowcount
+            response = status_for(conn, path)
+            response["inserted"] = 1 if inserted > 0 else 0
+        elif op == "record_countdown":
+            recorded_at = int(command["timestamp"])
+            duration = int(command["durationMinutes"])
+            with conn:
+                cursor = conn.execute(
+                    "INSERT OR IGNORE INTO countdown_record "
+                    "(id, duration_minutes, recorded_at) VALUES (?, ?, ?)",
+                    (countdown_id(recorded_at, duration), duration, recorded_at),
                 )
                 inserted = cursor.rowcount
             response = status_for(conn, path)
