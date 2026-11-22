@@ -27,6 +27,13 @@ Item {
     directory: Qt.resolvedUrl("i18n")
   }
 
+  // Zen Inactivity: fades the secondary HUD and hides the cursor after idle.
+  InactivityController {
+    id: inactivity
+    active: root.opened
+    target: hud
+  }
+
   function pad2(value) {
     var n = Math.floor(value)
     return (n < 10 ? "0" : "") + n
@@ -76,7 +83,8 @@ Item {
       opened: root.opened,
       format: root.hour12 ? "12h" : "24h",
       time: root.clockText + root.secondsText + (root.hour12 ? " " + root.ampmText : ""),
-      timezone: root.timezoneText
+      timezone: root.timezoneText,
+      zenActive: inactivity.zenActive
     })
   }
 
@@ -146,6 +154,7 @@ Item {
       focus: true
 
       Keys.onPressed: function(event) {
+        inactivity.wake()
         if (event.key === Qt.Key_Escape) {
           root.dismiss()
           event.accepted = true
@@ -153,6 +162,19 @@ Item {
           root.toggleFormat()
           event.accepted = true
         }
+      }
+
+      // Full-window activity sensor. Kept behind the HUD and clock so it
+      // never steals their clicks; those forward wake() themselves.
+      MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: inactivity.zenActive ? Qt.BlankCursor : Qt.ArrowCursor
+        onPositionChanged: inactivity.wake()
+        onPressed: inactivity.wake()
+        onReleased: inactivity.wake()
+        onClicked: inactivity.wake()
+        onWheel: inactivity.wake()
       }
 
       // Secondary HUD elements. Kept in one group so Zen Inactivity can fade
@@ -294,8 +316,11 @@ Item {
 
         MouseArea {
           anchors.fill: parent
-          cursorShape: Qt.PointingHandCursor
-          onClicked: root.toggleFormat()
+          cursorShape: inactivity.zenActive ? Qt.BlankCursor : Qt.PointingHandCursor
+          onClicked: {
+            inactivity.wake()
+            root.toggleFormat()
+          }
         }
       }
     }
