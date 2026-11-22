@@ -30,7 +30,7 @@ Item {
   // Zen Inactivity: fades the secondary HUD and hides the cursor after idle.
   InactivityController {
     id: inactivity
-    enabled: root.opened
+    active: root.opened
     target: hud
   }
 
@@ -83,7 +83,8 @@ Item {
       opened: root.opened,
       format: root.hour12 ? "12h" : "24h",
       time: root.clockText + root.secondsText + (root.hour12 ? " " + root.ampmText : ""),
-      timezone: root.timezoneText
+      timezone: root.timezoneText,
+      zenActive: inactivity.zenActive
     })
   }
 

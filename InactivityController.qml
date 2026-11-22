@@ -13,31 +13,32 @@ import qs.Commons
 Item {
   id: root
 
-  // Only count idle time while the overlay is actually visible.
-  property bool enabled: false
+  // Only count idle time while the overlay is actually visible. Named
+  // `active` because `enabled` is already a QQuickItem property.
+  property bool active: false
   property int idleTimeout: 3000
 
   // Secondary HUD group whose opacity is animated as a unit.
   property Item target: null
 
-  readonly property bool zenActive: root.enabled && root.zen
+  readonly property bool zenActive: root.active && root.zen
 
   property bool zen: false
 
   /** Reset the idle countdown and immediately bring the HUD back. */
   function wake() {
     root.zen = false
-    if (root.enabled) idleTimer.restart()
+    if (root.active) idleTimer.restart()
   }
 
-  onEnabledChanged: {
+  onActiveChanged: {
     root.zen = false
-    if (root.enabled) idleTimer.restart()
+    if (root.active) idleTimer.restart()
     else idleTimer.stop()
   }
 
   Component.onCompleted: {
-    if (root.enabled) idleTimer.restart()
+    if (root.active) idleTimer.restart()
   }
 
   Timer {
