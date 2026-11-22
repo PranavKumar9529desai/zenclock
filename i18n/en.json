@@ -1,0 +1,6 @@
+{
+  "title": "Zen Clock",
+  "hint.dismiss": "ESC  dismiss",
+  "hint.toggle": "SUPER + Z  toggle",
+  "hint.format": "CLICK  toggle 12/24h"
+}

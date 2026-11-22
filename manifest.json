@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "pranav.zenclock",
+  "name": "Zen Clock",
+  "version": "0.1.0",
+  "author": "Pranav",
+  "license": "MIT",
+  "description": "Distraction-free fullscreen clock and focus timer overlay for Omarchy.",
+  "kinds": ["overlay"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Overlay.qml"
+  }
+}
