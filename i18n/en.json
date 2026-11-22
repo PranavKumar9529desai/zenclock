@@ -27,7 +27,7 @@
   "timer.custom.active": "CUSTOM  %1 MIN",
   "timer.custom.label": "CUSTOM",
   "timer.custom.unit": "MIN",
-  "timer.custom.hint": "ENTER  set    ESC  exit",
+  "timer.custom.hint": "ENTER  set    ESC  dismiss",
   "timer.action.play": "Start",
   "timer.action.pause": "Pause",
   "timer.action.resume": "Resume",

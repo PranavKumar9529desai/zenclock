@@ -11,6 +11,7 @@ Item {
 
   required property var engine
   property bool hudFaded: false
+  property bool actionLocked: false
 
   // Raised on any pointer interaction so the owner can wake Zen Inactivity.
   signal activity()
@@ -43,6 +44,9 @@ Item {
   readonly property string actionLabel: {
     if (root.engine.cycleHalted) return strings.t("pomodoro.action.newCycle")
     if (root.engine.running) return strings.t("pomodoro.action.pause")
+    // The shared pure policy already derives "Resume" from the active phase's
+    // own duration (the V1 fix) and extends it to every active phase, including
+    // a restored Short/Long Break; keep one derivation to avoid drift.
     return root.phasePartiallyElapsed
       ? strings.t("pomodoro.action.resume")
       : strings.t("pomodoro.action.play")
@@ -159,6 +163,7 @@ Item {
       HudButton {
         accent: true
         faded: root.hudFaded
+        locked: root.actionLocked
         label: strings.t("pomodoro.controls.primary").arg(root.playGlyph).arg(root.actionLabel)
         onActivity: root.activity()
         onClicked: root.engine.toggle()
@@ -166,6 +171,7 @@ Item {
 
       HudButton {
         faded: root.hudFaded
+        locked: root.actionLocked
         label: strings.t("pomodoro.controls.primary").arg("󰑐").arg(strings.t("pomodoro.action.reset"))
         onActivity: root.activity()
         onClicked: root.engine.reset()
@@ -173,6 +179,7 @@ Item {
 
       HudButton {
         faded: root.hudFaded
+        locked: root.actionLocked
         interactive: root.engine.canSkip
         label: strings.t("pomodoro.controls.primary").arg("󰒭").arg(strings.t("pomodoro.action.skip"))
         onActivity: root.activity()

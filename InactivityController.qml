@@ -22,10 +22,19 @@ Item {
 
   property bool inGrace: false
   property bool zen: false
+  // Brief window after waking from Zen during which clicks only reveal the
+  // HUD, so a pointer parked on a faded control cannot act blindly.
+  property bool justWoke: false
+  property int revealHoldMs: 400
 
   /** Reset the idle countdown and immediately bring the HUD back. */
   function wake() {
+    var wasZen = root.zenActive
     root.zen = false
+    if (wasZen) {
+      root.justWoke = true
+      revealHold.restart()
+    }
     if (!root.active) return
     if (root.inGrace) graceTimer.restart()
     else idleTimer.restart()
@@ -33,11 +42,20 @@ Item {
 
   onActiveChanged: {
     root.zen = false
+    root.justWoke = false
+    revealHold.stop()
     idleTimer.stop()
     graceTimer.stop()
     // Opening always shows the controls via the owner's opacity binding.
     root.inGrace = root.active
     if (root.active) graceTimer.restart()
+  }
+
+  Timer {
+    id: revealHold
+    interval: root.revealHoldMs
+    repeat: false
+    onTriggered: root.justWoke = false
   }
 
   Timer {

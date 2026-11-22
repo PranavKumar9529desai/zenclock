@@ -304,7 +304,9 @@ Item {
     // Clear the flag before reset(): a reset while running must be allowed to
     // set its own suppression rather than having it erased here.
     root.checkpointSuppressed = false
-    pomodoro.reset()
+    // Full test-seam reset from V1; the checkpoint handler observes its
+    // running/remaining transitions and re-suppresses writes as needed.
+    pomodoro.resetAll()
     countdown.setPreset(5)
     stopwatch.reset()
     root.debugEvents = []

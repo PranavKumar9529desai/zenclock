@@ -10,6 +10,7 @@ Item {
 
   required property var engine
   property bool hudFaded: false
+  property bool actionLocked: false
 
   // Raised on any pointer interaction so the owner can wake Zen Inactivity.
   signal activity()
@@ -139,7 +140,10 @@ Item {
             onExited: preset.hovered = false
             onPositionChanged: root.activity()
             onClicked: {
-              root.activity()
+              if (root.actionLocked) {
+                root.activity()
+                return
+              }
               root.engine.setPreset(preset.modelData)
               // A typed-but-unconfirmed value must not outlive a preset click.
               customInput.text = String(root.engine.customMinutes)
@@ -190,12 +194,8 @@ Item {
           validator: IntValidator { bottom: root.engine.minMinutes; top: root.engine.maxMinutes }
           maximumLength: 3
           selectByMouse: true
+          readOnly: root.actionLocked
 
-          Keys.onEscapePressed: {
-            customInput.text = String(root.engine.customMinutes)
-            root.focusRestored()
-            event.accepted = true
-          }
           onAccepted: {
             var value = parseInt(customInput.text, 10)
             if (!root.engine.setCustomMinutes(value))
@@ -236,6 +236,7 @@ Item {
       HudButton {
         accent: true
         faded: root.hudFaded
+        locked: root.actionLocked
         label: strings.t("timer.controls.primary").arg(root.playGlyph).arg(root.actionLabel)
         onActivity: root.activity()
         onClicked: {
@@ -246,6 +247,7 @@ Item {
 
       HudButton {
         faded: root.hudFaded
+        locked: root.actionLocked
         label: strings.t("timer.controls.primary").arg("󰑐").arg(strings.t("timer.action.reset"))
         onActivity: root.activity()
         onClicked: {

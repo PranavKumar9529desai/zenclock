@@ -6,7 +6,8 @@ How the engineering skills should consume this repo's domain documentation when 
 
 - **`GLOSSARY.md`** at the repo root
 - **`docs/adr/`**: read ADRs that touch the area you're about to work in
-  (`0001-fullscreen-overlay-architecture.md`, `0002-event-sink-seam.md`)
+  (`0001-fullscreen-overlay-architecture.md`, `0002-event-sink-seam.md`,
+  `0003-focus-log-persistence.md` — accepted design, not yet implemented)
 
 ## File structure
 

@@ -10,7 +10,10 @@ check() { "$@" || failures=$((failures + 1)); }
 contains() { zc_assert_contains "$@"; }
 
 # IPC teardown only: never type synthetic keys into an unfocused window.
-cleanup() { zc_hide 2>/dev/null || true; }
+cleanup() {
+  zc_call debugResetAll '' >/dev/null 2>&1 || true
+  zc_hide 2>/dev/null || true
+}
 trap cleanup EXIT
 
 # Baseline: hidden overlay. Engines deliberately keep their state while hidden,

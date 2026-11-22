@@ -12,6 +12,7 @@ Rectangle {
   property string label: ""
   property bool accent: false
   property bool faded: false
+  property bool locked: false
   property bool interactive: true
 
   signal clicked()
@@ -49,8 +50,8 @@ Rectangle {
     cursorShape: root.faded ? Qt.BlankCursor : Qt.PointingHandCursor
     onEntered: root.activity()
     onClicked: {
-      // A click on an invisible control reveals the HUD without acting.
-      if (root.faded) {
+      // A click on an invisible or just-revealed control only reveals it.
+      if (root.locked) {
         root.activity()
         return
       }

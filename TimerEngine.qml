@@ -105,6 +105,7 @@ Item {
   }
 
   function complete() {
+    if (!root.running && root.remainingSeconds === 0) return
     root.running = false
     root.deadlineMs = 0
     root.remainingSeconds = 0

@@ -199,6 +199,15 @@ Item {
     }
   }
 
+  // Hard reset used by the test seam: clears phase, cycle progress and timer.
+  function resetAll() {
+    root.phase = "focus"
+    root.completedFocusSessions = 0
+    root.remainingSeconds = root.focusMinutes * 60
+    root.deadlineMs = 0
+    root.running = false
+  }
+
   function startNewCycle() {
     root.clearRestoredSession()
     root.completedFocusSessions = 0
