@@ -56,6 +56,21 @@ zc_press() {
 # Event capture is test-only and off in production; the string needs unescaping.
 zc_events() { zc_call debugEventsJson '' | jq -r '.' 2>/dev/null || echo '[]'; }
 
+# Read the published Focus Log artifact with an ordinary SQLite client — never
+# through plugin IPC or the QML visual tree. One shared heredoc for all scripts.
+zfl_sql() {
+  local db="$1" sql="$2"
+  python3 - "$db" "$sql" <<'PY'
+import sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+try:
+    for row in conn.execute(sys.argv[2]):
+        print("\t".join("" if value is None else str(value) for value in row))
+finally:
+    conn.close()
+PY
+}
+
 # Poll until a JSON field changes from its previous value.
 zc_wait_changed() {
   local filter="$1" previous="$2" attempts="${3:-15}" actual=""

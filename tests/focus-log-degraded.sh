@@ -12,15 +12,11 @@ source "$(dirname "$0")/adapter.sh"
 
 failures=0
 check() { "$@" || failures=$((failures + 1)); }
-eq() { zc_assert_eq "$@"; }
 
-original_path=""
 tmpdir=""
 cleanup() {
-  # Always point the adapter back at the real database before leaving.
-  if [[ -n "$original_path" ]]; then
-    zc_call debugSetFocusLogPath "$original_path" >/dev/null 2>&1 || true
-  fi
+  # Always leave the production adapter selected on the real, fixed path.
+  zc_call debugSelectFocusLogAdapter production '' >/dev/null 2>&1 || true
   [[ -n "$tmpdir" ]] && rm -rf "$tmpdir"
   zc_call debugSetEventCapture false >/dev/null 2>&1 || true
   zc_call debugResetAll '' >/dev/null 2>&1 || true
@@ -35,17 +31,18 @@ zc_call debugSetEventCapture true >/dev/null
 sleep 0.4
 
 check zc_has_field focusLog
-original_path="$(zc_field '.focusLog.path')"
-check eq "Focus Log path is reported" \
-  "$([[ "$original_path" == *zenclock/focus-log.sqlite3 ]] && echo yes || echo no)" "yes"
-check eq "storage starts healthy" "$(zc_field '.focusLog.status')" "ok"
+production_path="$(zc_field '.focusLog.path')"
+check zc_assert_eq "Focus Log path is reported" \
+  "$([[ "$production_path" == *zenclock/focus-log.sqlite3 ]] && echo yes || echo no)" "yes"
+check zc_assert_eq "storage starts healthy" "$(zc_field '.focusLog.status')" "ok"
 
-# Isolate the failure: a throwaway database that the helper creates on demand.
+# Isolate the failure at the adapter seam: a test recording adapter with a
+# throwaway database, never a mutable path on the production adapter.
 tmpdir="$(mktemp -d)"
 isolated_db="$tmpdir/focus-log.sqlite3"
-zc_call debugSetFocusLogPath "$isolated_db" >/dev/null
+zc_call debugSelectFocusLogAdapter "test:$isolated_db" >/dev/null
 check zc_wait_field '.focusLog.status' ok 10
-check eq "isolated database is reported" "$(zc_field '.focusLog.path')" "$isolated_db"
+check zc_assert_eq "isolated database is reported" "$(zc_field '.focusLog.path')" "$isolated_db"
 
 # Corrupt the throwaway artifact with non-SQLite bytes. Between commands the
 # helper closes its connection, so the file is safe to overwrite here.
@@ -56,9 +53,9 @@ fake_event='{"sessionId":"zc-degraded-f1","durationMinutes":25,"timestamp":17300
 zc_call debugRedeliverFocus "$fake_event" >/dev/null
 check zc_wait_field '.focusLog.status' degraded 10
 reason="$(zc_field '.focusLog.statusReason')"
-check eq "degraded status carries a logged reason" \
+check zc_assert_eq "degraded status carries a logged reason" \
   "$([[ -n "$reason" && "$reason" != "null" ]] && echo yes || echo no)" "yes"
-check eq "degraded adapter writes no Focus Record" "$(zc_field '.focusLog.counts.focus')" "0"
+check zc_assert_eq "degraded adapter writes no Focus Record" "$(zc_field '.focusLog.counts.focus')" "0"
 
 # Timers keep ticking while storage is degraded.
 first_time="$(zc_field '.time')"
@@ -68,22 +65,22 @@ check zc_wait_changed '.time' "$first_time" 10
 cues_before="$(zc_call debugCueCount '')"
 for _ in 1 2 3 4 5 6 7 8; do zc_call debugAdvancePhase '' >/dev/null; done
 cycle_events="$(zc_events | jq -r 'map(select(.type == "cycleFinished")) | length')"
-check eq "Pomodoro Cycle still completes while degraded" \
+check zc_assert_eq "Pomodoro Cycle still completes while degraded" \
   "$([[ "$cycle_events" -ge 1 ]] && echo yes || echo no)" "yes"
 cues_after="$(zc_call debugCueCount '')"
-check eq "audio cues still fire while degraded" \
+check zc_assert_eq "audio cues still fire while degraded" \
   "$([[ "$cues_after" -gt "$cues_before" ]] && echo yes || echo no)" "yes"
 
 # The Timer countdown remains usable and still fires its cue.
-check eq "timer preset still works while degraded" "$(zc_call debugSetTimerPreset 5)" "true"
+check zc_assert_eq "timer preset still works while degraded" "$(zc_call debugSetTimerPreset 5)" "true"
 cues_before_timer="$(zc_call debugCueCount '')"
 zc_call debugExpireTimer '' >/dev/null
 cues_after_timer="$(zc_call debugCueCount '')"
-check eq "countdown cue still fires while degraded" \
+check zc_assert_eq "countdown cue still fires while degraded" \
   "$([[ "$cues_after_timer" -gt "$cues_before_timer" ]] && echo yes || echo no)" "yes"
 
 # Storage is still degraded after all of that activity; nothing recovered by accident.
-check eq "storage remains degraded" "$(zc_field '.focusLog.status')" "degraded"
+check zc_assert_eq "storage remains degraded" "$(zc_field '.focusLog.status')" "degraded"
 
 if (( failures > 0 )); then
   echo "$failures check(s) failed"

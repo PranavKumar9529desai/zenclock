@@ -7,7 +7,6 @@ source "$(dirname "$0")/adapter.sh"
 
 failures=0
 check() { "$@" || failures=$((failures + 1)); }
-eq() { zc_assert_eq "$@"; }
 contains() { zc_assert_contains "$@"; }
 
 # IPC teardown only: never type synthetic keys into an unfocused window.
@@ -21,18 +20,18 @@ check zc_wait_field '.serviceReady' true 10
 zc_call debugResetAll '' >/dev/null
 zc_call debugSetEventCapture false >/dev/null
 sleep 0.4
-check eq "overlay starts hidden" "$(zc_field '.opened')" "false"
+check zc_assert_eq "overlay starts hidden" "$(zc_field '.opened')" "false"
 
 # Summon and verify the primary display.
 zc_toggle
 sleep 0.7
-check eq "overlay opens" "$(zc_field '.opened')" "true"
-check eq "service is loaded" "$(zc_field '.serviceReady')" "true"
-check eq "12-hour format by default" "$(zc_field '.format')" "12h"
+check zc_assert_eq "overlay opens" "$(zc_field '.opened')" "true"
+check zc_assert_eq "service is loaded" "$(zc_field '.serviceReady')" "true"
+check zc_assert_eq "12-hour format by default" "$(zc_field '.format')" "12h"
 check contains "timezone badge is populated" "$(zc_field '.timezone')" "(UTC"
-check eq "overlay targets a focused monitor" \
+check zc_assert_eq "overlay targets a focused monitor" \
   "$([[ -n "$(zc_field '.screen')" ]] && echo set || echo empty)" "set"
-check eq "chime availability is reported" \
+check zc_assert_eq "chime availability is reported" \
   "$([[ "$(zc_field '.cueAvailable')" == "true" || "$(zc_field '.cueAvailable')" == "false" ]] && echo reported || echo missing)" "reported"
 
 first_time="$(zc_field '.time')"
@@ -42,9 +41,9 @@ check zc_wait_changed '.time' "$first_time" 10
 # grace period plus idle timeout. The old smoke test checked only `zenActive`,
 # which let the open-into-Zen bug slip through.
 if zc_has_field hudOpacity; then
-  check eq "HUD is visible immediately on open" "$(zc_field '.hudOpacity')" "1"
+  check zc_assert_eq "HUD is visible immediately on open" "$(zc_field '.hudOpacity')" "1"
   sleep 4
-  check eq "HUD stays visible during grace period" "$(zc_field '.hudOpacity')" "1"
+  check zc_assert_eq "HUD stays visible during grace period" "$(zc_field '.hudOpacity')" "1"
   # Someone may dismiss the overlay from the desktop mid-wait; re-summon and
   # retry rather than reporting a false failure.
   zen_ok=0
@@ -52,7 +51,7 @@ if zc_has_field hudOpacity; then
     zc_ensure_open
     if zc_wait_field '.zenActive' true 15 >/dev/null 2>&1; then zen_ok=1; break; fi
   done
-  check eq "HUD fades after grace + idle" "$zen_ok" "1"
+  check zc_assert_eq "HUD fades after grace + idle" "$zen_ok" "1"
   check zc_wait_field '.hudOpacity' 0 10
   zc_press a
   check zc_wait_field '.zenActive' false 10
@@ -64,7 +63,7 @@ fi
 if zc_has_field mode; then
   zc_press 2
   check zc_wait_field '.mode' pomodoro 10
-  check eq "Focus Session starts at 25:00" "$(zc_field '.pomodoro.remaining')" "25:00"
+  check zc_assert_eq "Focus Session starts at 25:00" "$(zc_field '.pomodoro.remaining')" "25:00"
 
   zc_press space
   check zc_wait_field '.pomodoro.running' true 10
@@ -73,32 +72,32 @@ if zc_has_field mode; then
 
   zc_press r
   check zc_wait_field '.pomodoro.remaining' 25:00 10
-  check eq "R pauses the timer" "$(zc_field '.pomodoro.running')" "false"
+  check zc_assert_eq "R pauses the timer" "$(zc_field '.pomodoro.running')" "false"
 
   # Drive the deadline machine directly; no 100-minute waits.
   zc_call debugSetEventCapture true >/dev/null
   zc_call debugAdvancePhase ''
-  check eq "focus 1 ends in Short Break" "$(zc_field '.pomodoro.phase')" "shortBreak"
-  check eq "Short Break is session 1 of 4" "$(zc_field '.pomodoro.session')" "1"
-  check eq "Focus Session event emitted" \
+  check zc_assert_eq "focus 1 ends in Short Break" "$(zc_field '.pomodoro.phase')" "shortBreak"
+  check zc_assert_eq "Short Break is session 1 of 4" "$(zc_field '.pomodoro.session')" "1"
+  check zc_assert_eq "Focus Session event emitted" \
     "$(zc_events | jq -r 'map(select(.type == "focusSessionCompleted")) | length')" "1"
-  check eq "Focus Session event has metadata" \
+  check zc_assert_eq "Focus Session event has metadata" \
     "$(zc_events | jq -r 'map(select(.type == "focusSessionCompleted")) | .[0] | "\(.durationMinutes):\(.sessionId | type):\(.timestamp | type)"')" \
     "25:string:number"
   zc_call debugAdvancePhase ''
-  check eq "Short Break returns to Focus Session" "$(zc_field '.pomodoro.phase')" "focus"
-  check eq "next Focus Session is 2 of 4" "$(zc_field '.pomodoro.session')" "2"
+  check zc_assert_eq "Short Break returns to Focus Session" "$(zc_field '.pomodoro.phase')" "focus"
+  check zc_assert_eq "next Focus Session is 2 of 4" "$(zc_field '.pomodoro.session')" "2"
 
   for _ in 1 2 3 4 5; do zc_call debugAdvancePhase '' >/dev/null; done
-  check eq "4th Focus Session ends in Long Break" "$(zc_field '.pomodoro.phase')" "longBreak"
-  check eq "Long Break is session 4 of 4" "$(zc_field '.pomodoro.session')" "4"
+  check zc_assert_eq "4th Focus Session ends in Long Break" "$(zc_field '.pomodoro.phase')" "longBreak"
+  check zc_assert_eq "Long Break is session 4 of 4" "$(zc_field '.pomodoro.session')" "4"
   zc_call debugAdvancePhase ''
-  check eq "Long Break halts the Pomodoro Cycle" "$(zc_field '.pomodoro.phase')" "cycleComplete"
-  check eq "halted cycle is flagged" "$(zc_field '.pomodoro.cycleHalted')" "true"
-  check eq "cycle completion event emitted" \
+  check zc_assert_eq "Long Break halts the Pomodoro Cycle" "$(zc_field '.pomodoro.phase')" "cycleComplete"
+  check zc_assert_eq "halted cycle is flagged" "$(zc_field '.pomodoro.cycleHalted')" "true"
+  check zc_assert_eq "cycle completion event emitted" \
     "$(zc_events | jq -r 'map(select(.type == "cycleFinished")) | length')" "1"
   sleep 1.2
-  check eq "cycle never auto-restarts" "$(zc_field '.pomodoro.phase')" "cycleComplete"
+  check zc_assert_eq "cycle never auto-restarts" "$(zc_field '.pomodoro.phase')" "cycleComplete"
 
   zc_press 1
   check zc_wait_field '.mode' clock 10
@@ -108,26 +107,26 @@ fi
 if zc_has_field mode; then
   zc_press 3
   check zc_wait_field '.mode' timer 10
-  check eq "default preset is 5 minutes" "$(zc_field '.timer.remaining')" "05:00"
+  check zc_assert_eq "default preset is 5 minutes" "$(zc_field '.timer.remaining')" "05:00"
 
   zc_call debugSetTimerPreset 15 >/dev/null
-  check eq "preset sets 15 minutes" "$(zc_field '.timer.remaining')" "15:00"
-  check eq "preset is not custom" "$(zc_field '.timer.custom')" "false"
+  check zc_assert_eq "preset sets 15 minutes" "$(zc_field '.timer.remaining')" "15:00"
+  check zc_assert_eq "preset is not custom" "$(zc_field '.timer.custom')" "false"
   zc_call debugSetCustomMinutes 42 >/dev/null
-  check eq "custom sets 42 minutes" "$(zc_field '.timer.remaining')" "42:00"
-  check eq "custom is flagged" "$(zc_field '.timer.custom')" "true"
-  check eq "out-of-range custom is rejected" "$(zc_call debugSetCustomMinutes 999)" "false"
+  check zc_assert_eq "custom sets 42 minutes" "$(zc_field '.timer.remaining')" "42:00"
+  check zc_assert_eq "custom is flagged" "$(zc_field '.timer.custom')" "true"
+  check zc_assert_eq "out-of-range custom is rejected" "$(zc_call debugSetCustomMinutes 999)" "false"
 
   zc_press space
   check zc_wait_field '.timer.running' true 10
   zc_press r
   check zc_wait_field '.timer.remaining' 42:00 10
   zc_call debugExpireTimer ''
-  check eq "countdown reaches 00:00" "$(zc_field '.timer.remaining')" "00:00"
-  check eq "countdown stops at zero" "$(zc_field '.timer.running')" "false"
-  check eq "countdown completion event emitted" \
+  check zc_assert_eq "countdown reaches 00:00" "$(zc_field '.timer.remaining')" "00:00"
+  check zc_assert_eq "countdown stops at zero" "$(zc_field '.timer.running')" "false"
+  check zc_assert_eq "countdown completion event emitted" \
     "$(zc_events | jq -r 'map(select(.type == "countdownCompleted")) | length')" "1"
-  check eq "countdown event has duration" \
+  check zc_assert_eq "countdown event has duration" \
     "$(zc_events | jq -r 'map(select(.type == "countdownCompleted")) | .[0].durationMinutes')" "42"
 
   # Background persistence: a hidden overlay must not stop the countdown.
@@ -145,7 +144,7 @@ fi
 if zc_has_field mode; then
   zc_press 4
   check zc_wait_field '.mode' stopwatch 10
-  check eq "stopwatch starts at 00:00" "$(zc_field '.stopwatch.elapsed')" "00:00"
+  check zc_assert_eq "stopwatch starts at 00:00" "$(zc_field '.stopwatch.elapsed')" "00:00"
   zc_press space
   check zc_wait_field '.stopwatch.running' true 10
   started="$(zc_field '.stopwatch.elapsed')"

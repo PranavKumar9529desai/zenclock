@@ -316,6 +316,51 @@ class FocusLogHelperTest(unittest.TestCase):
         response = run_helper([{"op": "status"}])[0]
         self.assertEqual(response["status"], "degraded")
         self.assertTrue(response["error"])
+
+    def _write_unrecognized_version(self, version=999):
+        """Simulate a Focus Log written by a future schema the plugin cannot read."""
+        conn = sqlite3.connect(self.db)
+        try:
+            with conn:
+                conn.execute(
+                    "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+                    (version, int(time.time() * 1000)))
+        finally:
+            conn.close()
+
+    def test_unrecognized_schema_version_degrades_without_publishing_a_version(self):
+        """schema reference, versioning rule 4: stop and report unknown versions."""
+        self.init()
+        self._write_unrecognized_version()
+
+        response = run_helper([{"op": "status", "path": self.db}])[0]
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["status"], "degraded")
+        self.assertIn("999", response["error"])
+        self.assertIn("supported", response["error"])
+        # Nothing about this unreadable database is published as usable state.
+        for key in ("version", "counts", "checkpoint", "journalMode"):
+            self.assertNotIn(key, response)
+
+    def test_unrecognized_schema_version_does_not_write_a_record(self):
+        self.init()
+        self._write_unrecognized_version()
+
+        response = run_helper([{
+            "op": "record_focus", "path": self.db, "id": "zc-future-f1",
+            "durationMinutes": 25, "timestamp": 1730000000123,
+        }])[0]
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["status"], "degraded")
+        conn = sqlite3.connect(self.db)
+        try:
+            ids = conn.execute("SELECT id FROM focus_record").fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(ids, [])
+
     def test_cycle_record_persists_id_and_timestamp(self):
         self.init()
         event = {"op": "record_cycle", "path": self.db,
