@@ -6,13 +6,20 @@ the published artifact (the SQLite file) with an independent sqlite3 client.
 They do not inspect helper internals.
 """
 
+import datetime
 import json
 import os
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+
+# The published queries group by local day. Pin UTC so their day labels are
+# deterministic without changing the SQL under test.
+os.environ["TZ"] = "UTC"
+time.tzset()
 
 HELPER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                       "focus_log_helper.py")
@@ -177,6 +184,199 @@ class FocusLogHelperTest(unittest.TestCase):
         self.assertEqual(status["version"], 1)
         self.assertEqual(status["counts"], {"focus": 1, "cycle": 0, "countdown": 0})
         self.assertEqual(status["journalMode"].lower(), "wal")
+
+    def test_corrupt_database_degrades_to_noop_and_helper_survives(self):
+        self.init()
+        # Corrupt the published artifact directly with non-SQLite bytes.
+        with open(self.db, "wb") as handle:
+            handle.write(b"not a sqlite database\n")
+        fresh = os.path.join(self.tmp.name, "fresh", "focus-log.sqlite3")
+        responses = run_helper([
+            {"op": "record_focus", "path": self.db,
+             "id": "zc-corrupt-f1", "durationMinutes": 25, "timestamp": 1730000000123},
+            {"op": "status", "path": fresh},
+        ])
+
+        failed = responses[0]
+        self.assertFalse(failed["ok"])
+        self.assertEqual(failed["status"], "degraded")
+        self.assertTrue(failed["error"])
+        # A later, healthy command still works: one failure never kills the helper.
+        self.assertTrue(responses[1]["ok"], "helper must survive a storage failure")
+        self.assertEqual(responses[1]["counts"], {"focus": 0, "cycle": 0, "countdown": 0})
+
+    def test_unwritable_database_directory_degrades_without_crashing(self):
+        # A regular file where the database directory should be makes every
+        # filesystem operation on the parent fail.
+        blocker = os.path.join(self.tmp.name, "blocked")
+        with open(blocker, "w") as handle:
+            handle.write("x")
+        blocked_db = os.path.join(blocker, "focus-log.sqlite3")
+        responses = run_helper([
+            {"op": "init", "path": blocked_db},
+            {"op": "status", "path": self.db},
+        ])
+
+        self.assertFalse(responses[0]["ok"])
+        self.assertEqual(responses[0]["status"], "degraded")
+        self.assertTrue(responses[0]["error"])
+        self.assertTrue(responses[1]["ok"], "helper must survive an unwritable path")
+
+    def test_failed_command_reports_degraded_status_with_a_reason(self):
+        # A missing path stands in for a helper that cannot open storage at all.
+        response = run_helper([{"op": "status"}])[0]
+        self.assertEqual(response["status"], "degraded")
+        self.assertTrue(response["error"])
+    def test_cycle_record_persists_id_and_timestamp(self):
+        self.init()
+        event = {"op": "record_cycle", "path": self.db,
+                 "id": "zc-test-c1", "timestamp": 1730451600000}
+        response = run_helper([event])[0]
+
+        self.assertTrue(response["ok"], response)
+        self.assertEqual(response["inserted"], 1)
+        conn = sqlite3.connect(self.db)
+        try:
+            rows = conn.execute(
+                "SELECT id, recorded_at FROM cycle_record").fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(rows, [("zc-test-c1", 1730451600000)])
+
+    def test_cycle_redelivery_is_idempotent(self):
+        self.init()
+        event = {"op": "record_cycle", "path": self.db,
+                 "id": "zc-test-c1", "timestamp": 1730451600000}
+        responses = run_helper([event, event])
+
+        self.assertEqual([r["inserted"] for r in responses], [1, 0])
+        conn = sqlite3.connect(self.db)
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM cycle_record").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(count, 1)
+
+    def test_countdown_record_uses_deterministic_synthesized_id(self):
+        self.init()
+        event = {"op": "record_countdown", "path": self.db,
+                 "durationMinutes": 5, "timestamp": 1730451600000}
+        response = run_helper([event])[0]
+
+        self.assertTrue(response["ok"], response)
+        self.assertEqual(response["inserted"], 1)
+        conn = sqlite3.connect(self.db)
+        try:
+            rows = conn.execute(
+                "SELECT id, duration_minutes, recorded_at FROM countdown_record"
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(rows, [("zc-cd-1730451600000-5", 5, 1730451600000)])
+
+    def test_countdown_redelivery_is_idempotent(self):
+        self.init()
+        event = {"op": "record_countdown", "path": self.db,
+                 "durationMinutes": 5, "timestamp": 1730451600000}
+        responses = run_helper([event, event])
+
+        self.assertEqual([r["inserted"] for r in responses], [1, 0])
+        conn = sqlite3.connect(self.db)
+        try:
+            rows = conn.execute(
+                "SELECT id, duration_minutes, recorded_at FROM countdown_record"
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(rows, [("zc-cd-1730451600000-5", 5, 1730451600000)])
+
+    def test_distinct_countdowns_get_distinct_synthesized_ids(self):
+        self.init()
+        run_helper([
+            {"op": "record_countdown", "path": self.db,
+             "durationMinutes": 5, "timestamp": 1730451600000},
+            {"op": "record_countdown", "path": self.db,
+             "durationMinutes": 5, "timestamp": 1730473200000},
+        ])
+        conn = sqlite3.connect(self.db)
+        try:
+            ids = [row[0] for row in conn.execute(
+                "SELECT id FROM countdown_record ORDER BY id")]
+        finally:
+            conn.close()
+        self.assertEqual(ids, ["zc-cd-1730451600000-5", "zc-cd-1730473200000-5"])
+
+    def test_countdowns_do_not_inflate_canonical_focus_metric(self):
+        self.init()
+        run_helper([
+            {"op": "record_focus", "path": self.db, "id": "zc-test-f1",
+             "durationMinutes": 25, "timestamp": 1730451600000},
+            {"op": "record_countdown", "path": self.db,
+             "durationMinutes": 5, "timestamp": 1730451600000},
+        ])
+        conn = sqlite3.connect(self.db)
+        try:
+            # Verbatim from docs/focus-log-schema.md, "Canonical metric".
+            minutes = conn.execute(
+                "SELECT SUM(duration_minutes) AS focus_minutes FROM focus_record"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(minutes, 25)
+
+    def test_documented_dashboard_queries_return_documented_results(self):
+        self.init()
+        today_ms = int(time.time() * 1000)
+        today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+        run_helper([
+            {"op": "record_focus", "path": self.db, "id": "zc-test-f1",
+             "durationMinutes": 25, "timestamp": 1730451600000},
+            {"op": "record_focus", "path": self.db, "id": "zc-test-f2",
+             "durationMinutes": 50, "timestamp": 1730473200000},
+            {"op": "record_focus", "path": self.db, "id": "zc-test-f3",
+             "durationMinutes": 25, "timestamp": 1730556000000},
+            {"op": "record_focus", "path": self.db, "id": "zc-test-f4",
+             "durationMinutes": 50, "timestamp": today_ms},
+            {"op": "record_cycle", "path": self.db, "id": "zc-test-c1",
+             "timestamp": 1730451600000},
+            {"op": "record_cycle", "path": self.db, "id": "zc-test-c2",
+             "timestamp": 1730556000000},
+        ])
+
+        conn = sqlite3.connect(self.db)
+        try:
+            # The four example queries, verbatim from the published schema.
+            daily = conn.execute("""
+                SELECT date(recorded_at / 1000, 'unixepoch', 'localtime') AS day,
+                       SUM(duration_minutes) AS minutes,
+                       COUNT(*) AS sessions
+                FROM focus_record
+                GROUP BY day ORDER BY day;
+            """).fetchall()
+            todays = conn.execute("""
+                SELECT COALESCE(SUM(duration_minutes), 0) AS minutes
+                FROM focus_record
+                WHERE date(recorded_at / 1000, 'unixepoch', 'localtime') = date('now','localtime');
+            """).fetchone()[0]
+            cycles = conn.execute("SELECT COUNT(*) FROM cycle_record;").fetchone()[0]
+            longest = conn.execute("""
+                SELECT day, minutes FROM (
+                  SELECT date(recorded_at / 1000, 'unixepoch', 'localtime') AS day,
+                         SUM(duration_minutes) AS minutes
+                  FROM focus_record GROUP BY day
+                ) ORDER BY minutes DESC LIMIT 1;
+            """).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(daily, [
+            ("2024-11-01", 75, 2),
+            ("2024-11-02", 25, 1),
+            (today, 50, 1),
+        ])
+        self.assertEqual(todays, 50)
+        self.assertEqual(cycles, 2)
+        self.assertEqual(longest, ("2024-11-01", 75))
 
 
 if __name__ == "__main__":

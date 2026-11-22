@@ -9,10 +9,13 @@ import Quickshell.Io
 Item {
   id: root
 
-  readonly property string dbPath: Quickshell.statePath("zenclock/focus-log.sqlite3")
+  // Mutable only so the degradation smoke test can redirect writes to an
+  // isolated database; production always keeps the documented state path.
+  property string dbPath: Quickshell.statePath("zenclock/focus-log.sqlite3")
   property int schemaVersion: 1
 
   property string status: "initializing"
+  property string statusReason: ""
   property string journalMode: ""
   property int focusRecordCount: 0
   property int cycleRecordCount: 0
@@ -48,10 +51,16 @@ Item {
 
   function applyResponse(response) {
     if (!response || response.ok !== true) {
-      root.status = "error"
+      // Storage trouble is a no-op degradation, never an unhandled failure:
+      // record the reason, report it in state(), and leave the log alone.
+      var reason = (response && response.error) || "storage unavailable"
+      root.status = (response && response.status) || "degraded"
+      root.statusReason = reason
+      console.warn("Focus Log storage degraded:", reason)
       return
     }
     root.status = response.status || "ok"
+    root.statusReason = ""
     root.journalMode = response.journalMode || ""
     if (response.version) root.schemaVersion = response.version
     if (response.counts) {
@@ -91,13 +100,44 @@ Item {
   function loadCheckpoint() { root.send({ op: "load_checkpoint", path: root.dbPath }) }
   function clearCheckpoint() { root.send({ op: "clear_checkpoint", path: root.dbPath }) }
 
+  // Writes one idempotent Cycle Record for a completed Pomodoro Cycle.
+  function recordCycle(cycleId, timestamp) {
+    root.send({
+      op: "record_cycle",
+      path: root.dbPath,
+      id: cycleId,
+      timestamp: timestamp
+    })
+  }
+
+  // Writes one idempotent Countdown Record for a completed Timer countdown.
+  // The helper derives the deterministic key from timestamp and duration.
+  function recordCountdown(durationMinutes, timestamp) {
+    root.send({
+      op: "record_countdown",
+      path: root.dbPath,
+      durationMinutes: durationMinutes,
+      timestamp: timestamp
+    })
+  }
+
   function refresh() { root.send({ op: "status", path: root.dbPath }) }
+
+  // Test-only: point writes at an isolated database so the degradation smoke
+  // test can corrupt storage without ever touching the user's Focus Log.
+  function debugSetDbPath(path) {
+    root.dbPath = path
+    root.status = "initializing"
+    root.statusReason = ""
+    root.send({ op: "init", path: path })
+  }
 
   function stateJson() {
     return JSON.stringify({
       path: root.dbPath,
       schemaVersion: root.schemaVersion,
       status: root.status,
+      statusReason: root.statusReason,
       journalMode: root.journalMode,
       counts: {
         focus: root.focusRecordCount,
@@ -126,7 +166,15 @@ Item {
     }
 
     onRunningChanged: if (helper.running) root.flushPending()
-    onExited: root.status = "error"
+    // A nonzero (or unexpected) helper exit is itself a failed write: degrade
+    // with a reason rather than letting the exception escape to the overlay.
+    onExited: function(exitCode) {
+      var code = (typeof exitCode === "number") ? exitCode : "?"
+      var reason = "Focus Log helper exited (" + code + ")"
+      root.status = "degraded"
+      root.statusReason = reason
+      console.warn(reason)
+    }
   }
 
   Component.onCompleted: {

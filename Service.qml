@@ -32,9 +32,13 @@ Item {
   // Test-only capture, disabled by default, so production V1 keeps no history.
   property bool debugEventCapture: false
   property var debugEvents: []
+  // Test-only count of requested audio cues (observed at the event seam, with
+  // no engine changes): lets the degradation test prove cues still fire.
+  property int debugCueTotal: 0
 
   function debugEventsJson() { return JSON.stringify(root.debugEvents) }
   function clearDebugEvents() { root.debugEvents = [] }
+  function debugCueCount() { return root.debugCueTotal }
 
   PomodoroEngine { id: pomodoro }
   TimerEngine { id: countdown }
@@ -50,6 +54,14 @@ Item {
 
     function onFocusSessionCompleted(sessionId, durationMinutes, timestamp) {
       focusLog.recordFocus(sessionId, durationMinutes, timestamp)
+    }
+
+    function onCycleFinished(cycleId, timestamp) {
+      focusLog.recordCycle(cycleId, timestamp)
+    }
+
+    function onCountdownCompleted(durationMinutes, timestamp) {
+      focusLog.recordCountdown(durationMinutes, timestamp)
     }
   }
 
@@ -72,6 +84,8 @@ Item {
       if (root.debugEventCapture)
         root.debugEvents.push({ type: "cycleFinished", cycleId: cycleId, timestamp: timestamp })
     }
+
+    function onCueRequested(cue) { root.debugCueTotal++ }
   }
 
   Connections {
@@ -86,6 +100,8 @@ Item {
           timestamp: timestamp
         })
     }
+
+    function onCueRequested(cue) { root.debugCueTotal++ }
   }
 
   function rememberPomodoro() {
@@ -170,8 +186,10 @@ Item {
     countdown.setPreset(5)
     stopwatch.reset()
     root.debugEvents = []
+    root.debugCueTotal = 0
   }
   function debugAdvancePhase() { pomodoro.advance() }
+  function debugSetFocusLogPath(path) { focusLog.debugSetDbPath(path) }
   function debugSetTimerPreset(minutes) { return countdown.setPreset(minutes) }
   function debugSetCustomMinutes(minutes) { return countdown.setCustomMinutes(minutes) }
   function debugExpireTimer() { countdown.complete() }
@@ -179,6 +197,14 @@ Item {
   function debugRedeliverFocus(payload) {
     var event = JSON.parse(payload)
     root.focusSessionCompleted(event.sessionId, event.durationMinutes, event.timestamp)
+  }
+  function debugRedeliverCycle(payload) {
+    var event = JSON.parse(payload)
+    root.cycleFinished(event.cycleId, event.timestamp)
+  }
+  function debugRedeliverCountdown(payload) {
+    var event = JSON.parse(payload)
+    root.countdownCompleted(event.durationMinutes, event.timestamp)
   }
   // Re-run the load path without restarting the shell; restore is observed
   // through state() JSON, never the QML visual tree.

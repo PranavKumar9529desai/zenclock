@@ -51,6 +51,13 @@ production: the service simply forwards the engines' signals, so a V2 database
 adapter can connect at that seam. The test adapter reads the captured events
 with `zc_events` and asserts their type and metadata.
 
+`debugSetFocusLogPath` redirects Focus Log writes to an isolated database so the
+degradation test (`tests/focus-log-degraded.sh`) can corrupt storage without
+touching the user's real Focus Log; `debugCueCount` counts requested audio cues
+at the service event seam so the same test can prove cues still fire while
+storage is degraded. A failed write is reported in `state().focusLog.status` as
+`degraded` with the reason in `statusReason`.
+
 `state()` also reports `hudOpacity`. The smoke test asserts the HUD is visible
 immediately after open and stays visible through the 8-second grace period;
 only after the 3-second idle timeout does it fade. A click on a faded control

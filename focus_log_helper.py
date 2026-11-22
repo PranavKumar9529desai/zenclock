@@ -61,6 +61,20 @@ def now_ms():
     return int(time.time() * 1000)
 
 
+def degraded(op, reason):
+    """A failed command: no record is written and the adapter stays alive.
+
+    `status` is the observable storage status in the plugin state JSON; `error`
+    carries the human-readable reason that the QML adapter logs.
+    """
+    return {"op": op, "ok": False, "status": "degraded", "error": str(reason)}
+
+
+def countdown_id(recorded_at, duration_minutes):
+    """Deterministic key: countdownCompleted carries no ID of its own."""
+    return "zc-cd-%d-%d" % (recorded_at, duration_minutes)
+
+
 def connect(path):
     parent = os.path.dirname(os.path.abspath(path))
     os.makedirs(parent, exist_ok=True)
@@ -123,7 +137,7 @@ def handle(command):
     op = command.get("op")
     path = command.get("path")
     if not path:
-        return {"op": op, "ok": False, "error": "missing path"}
+        return degraded(op, "missing path")
 
     conn = None
     try:
@@ -139,6 +153,28 @@ def handle(command):
                     "(id, duration_minutes, recorded_at) VALUES (?, ?, ?)",
                     (command["id"], int(command["durationMinutes"]),
                      int(command["timestamp"])),
+                )
+                inserted = cursor.rowcount
+            response = status_for(conn, path)
+            response["inserted"] = 1 if inserted > 0 else 0
+        elif op == "record_cycle":
+            with conn:
+                cursor = conn.execute(
+                    "INSERT OR IGNORE INTO cycle_record (id, recorded_at) "
+                    "VALUES (?, ?)",
+                    (command["id"], int(command["timestamp"])),
+                )
+                inserted = cursor.rowcount
+            response = status_for(conn, path)
+            response["inserted"] = 1 if inserted > 0 else 0
+        elif op == "record_countdown":
+            recorded_at = int(command["timestamp"])
+            duration = int(command["durationMinutes"])
+            with conn:
+                cursor = conn.execute(
+                    "INSERT OR IGNORE INTO countdown_record "
+                    "(id, duration_minutes, recorded_at) VALUES (?, ?, ?)",
+                    (countdown_id(recorded_at, duration), duration, recorded_at),
                 )
                 inserted = cursor.rowcount
             response = status_for(conn, path)
@@ -169,12 +205,12 @@ def handle(command):
                 conn.execute("DELETE FROM checkpoint WHERE singleton = 1")
             response = status_for(conn, path)
         else:
-            return {"op": op, "ok": False, "error": "unknown op"}
+            return degraded(op, "unknown op")
 
         response["op"] = op
         return response
     except Exception as exc:  # keep the helper alive for later commands
-        return {"op": op, "ok": False, "error": str(exc)}
+        return degraded(op, exc)
     finally:
         if conn is not None:
             conn.close()
@@ -188,8 +224,7 @@ def main():
         try:
             command = json.loads(line)
         except ValueError as exc:
-            print(json.dumps({"ok": False, "error": "invalid JSON: " + str(exc)}),
-                  flush=True)
+            print(json.dumps(degraded(None, "invalid JSON: " + str(exc))), flush=True)
             continue
         print(json.dumps(handle(command)), flush=True)
 

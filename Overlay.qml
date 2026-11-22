@@ -117,6 +117,10 @@ Item {
   }
   function debugExpireTimer() { if (root.service) root.service.debugExpireTimer() }
   function debugEventsJson() { return root.service ? root.service.debugEventsJson() : "[]" }
+  function debugCueCount() { return root.service ? root.service.debugCueCount() : 0 }
+  function debugSetFocusLogPath(path) {
+    if (root.service) root.service.debugSetFocusLogPath(path)
+  }
   function debugSetEventCapture(enabled) {
     if (root.service)
       root.service.debugEventCapture = (enabled === true || enabled === "true")
@@ -171,6 +175,7 @@ Item {
         path: root.service.focusLog.dbPath,
         schemaVersion: root.service.focusLog.schemaVersion,
         status: root.service.focusLog.status,
+        statusReason: root.service.focusLog.statusReason,
         journalMode: root.service.focusLog.journalMode,
         counts: {
           focus: root.service.focusLog.focusRecordCount,
