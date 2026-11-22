@@ -9,6 +9,9 @@ Item {
   id: root
 
   property var engine: null
+  // Set by the overlay owner when Zen Inactivity fades secondary HUD elements.
+  // The primary MM:SS digits stay visible.
+  property bool hudFaded: false
 
   Commons.Translations {
     id: strings
@@ -45,8 +48,11 @@ Item {
     spacing: 18
 
     Row {
+      id: phaseRow
       anchors.horizontalCenter: parent.horizontalCenter
       spacing: 14
+      opacity: root.hudFaded ? 0 : 1
+      Behavior on opacity { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
 
       PlainText {
         anchors.verticalCenter: parent.verticalCenter
@@ -75,10 +81,13 @@ Item {
     }
 
     PlainText {
+      id: sessionLabel
       anchors.horizontalCenter: parent.horizontalCenter
       text: strings.t("pomodoro.session")
         .arg(Commons.I18n.formatNumber(root.engine ? root.engine.sessionNumber : 1))
         .arg(Commons.I18n.formatNumber(root.engine ? root.engine.sessionsPerCycle : 4))
+      opacity: root.hudFaded ? 0 : 1
+      Behavior on opacity { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
       font.pixelSize: 20
       font.family: Style.font.family
       color: "#9a9aa6"
@@ -86,8 +95,11 @@ Item {
 
     // Pomodoro Cycle progress: one native pomodoro glyph per Focus Session.
     Row {
+      id: progressRow
       anchors.horizontalCenter: parent.horizontalCenter
       spacing: 16
+      opacity: root.hudFaded ? 0 : 1
+      Behavior on opacity { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
 
       Repeater {
         model: 4
@@ -108,18 +120,24 @@ Item {
     }
 
     PlainText {
+      id: promptLabel
       anchors.horizontalCenter: parent.horizontalCenter
       visible: root.engine !== null && root.engine.cycleHalted
       text: strings.t("pomodoro.cyclePrompt")
+      opacity: root.hudFaded ? 0 : 1
+      Behavior on opacity { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
       font.pixelSize: 15
       font.family: Style.font.family
       color: "#7dd3fc"
     }
 
     Row {
+      id: controlsRow
       anchors.horizontalCenter: parent.horizontalCenter
       spacing: 16
       topPadding: 8
+      opacity: root.hudFaded ? 0 : 1
+      Behavior on opacity { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
 
       // Play / Pause / Start New Cycle (Space).
       Rectangle {
@@ -224,8 +242,11 @@ Item {
     }
 
     PlainText {
+      id: hintLabel
       anchors.horizontalCenter: parent.horizontalCenter
       text: strings.t("pomodoro.hint")
+      opacity: root.hudFaded ? 0 : 1
+      Behavior on opacity { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
       font.pixelSize: 13
       font.letterSpacing: 2
       font.family: Style.font.family

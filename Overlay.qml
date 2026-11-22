@@ -14,6 +14,9 @@ Item {
   property var manifest: null
   property bool opened: false
   property string mode: "clock" // "clock" | "pomodoro"; Timer / Stopwatch come later
+  // Owner-controlled seam: when Zen Inactivity lands, it binds this to its
+  // zenActive state so Pomodoro's secondary HUD fades with the clock HUD.
+  property bool hudFaded: false
 
   // Clock state. The clock stays live while hidden so re-summoning never
   // shows a stale time.
@@ -449,6 +452,7 @@ Item {
         visible: root.mode === "pomodoro"
         anchors.fill: parent
         engine: pomodoroEngine
+        hudFaded: root.hudFaded
       }
     }
   }
