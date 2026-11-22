@@ -13,9 +13,9 @@ Item {
   property bool hudFaded: false
   property bool actionLocked: false
 
-  // Raised on any pointer interaction so the owner can wake Zen Inactivity.
   signal activity()
 
+  ZenTheme { id: theme }
   Commons.Translations {
     id: strings
     directory: Qt.resolvedUrl("i18n")
@@ -27,11 +27,7 @@ Item {
     if (root.engine.phase === "cycleComplete") return strings.t("pomodoro.phase.cycleComplete")
     return strings.t("pomodoro.phase.focus")
   }
-
-  readonly property color phaseColor: {
-    if (root.engine.phase === "focus" || root.engine.cycleHalted) return "#7dd3fc"
-    return "#9ab9c9"
-  }
+  readonly property bool phaseActive: root.engine.phase === "focus" || root.engine.cycleHalted
 
   // A restored or paused Short/Long Break is partially elapsed too, so its
   // primary button reads "Resume" just like a Focus Session. Label only:
@@ -51,113 +47,89 @@ Item {
       ? strings.t("pomodoro.action.resume")
       : strings.t("pomodoro.action.play")
   }
-
   readonly property string playGlyph: root.engine.running ? "󰏤" : "󰐊"
 
   Column {
-    id: content
     anchors.centerIn: parent
-    spacing: 18
+    spacing: theme.space(20)
 
-    Row {
-      id: phaseRow
+    ZenText {
       anchors.horizontalCenter: parent.horizontalCenter
-      spacing: 14
+      text: root.phaseLabel
+      role: "heading"
+      tone: root.phaseActive ? "accent" : "secondary"
       opacity: root.hudFaded ? 0 : 1
       Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
-      }
-
-      PlainText {
-        anchors.verticalCenter: parent.verticalCenter
-        text: "󰔛"
-        font.pixelSize: 24
-        font.family: Style.font.family
-        color: root.phaseColor
-      }
-      PlainText {
-        anchors.verticalCenter: parent.verticalCenter
-        text: root.phaseLabel
-        font.pixelSize: 18
-        font.letterSpacing: 4
-        font.family: Style.font.family
-        color: root.phaseColor
+        NumberAnimation { duration: theme.duration; easing.type: Easing.OutCubic }
       }
     }
 
-    PlainText {
+    ZenText {
       anchors.horizontalCenter: parent.horizontalCenter
       text: root.engine.formattedTime
-      font.pixelSize: Math.min(root.width * 0.16, 280)
-      font.weight: Font.Light
-      font.family: Style.font.family
-      color: "#f4f4f8"
+      role: "hero"
+      size: theme.heroSize(root.width)
     }
 
-    PlainText {
-      id: sessionLabel
+    ZenText {
       anchors.horizontalCenter: parent.horizontalCenter
       text: strings.t("pomodoro.session")
         .arg(Commons.I18n.formatNumber(root.engine.sessionNumber))
         .arg(Commons.I18n.formatNumber(root.engine.sessionsPerCycle))
+      role: "body"
+      tone: "secondary"
       opacity: root.hudFaded ? 0 : 1
       Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
+        NumberAnimation { duration: theme.duration; easing.type: Easing.OutCubic }
       }
-      font.pixelSize: 20
-      font.family: Style.font.family
-      color: "#9a9aa6"
     }
 
-    // Pomodoro Cycle progress: one native pomodoro glyph per Focus Session.
+    // One bar per Focus Session: filled = done, bright = current, outlined = to do.
     Row {
       id: progressRow
       anchors.horizontalCenter: parent.horizontalCenter
-      spacing: 16
+      spacing: theme.space(8)
       opacity: root.hudFaded ? 0 : 1
       Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
+        NumberAnimation { duration: theme.duration; easing.type: Easing.OutCubic }
       }
 
       Repeater {
         model: root.engine.sessionsPerCycle
 
-        delegate: PlainText {
+        delegate: Rectangle {
           required property int index
-          text: "󰔛"
-          font.pixelSize: 26
-          font.family: Style.font.family
+          width: theme.space(30)
+          height: Math.max(2, Math.round(2 * theme.fontScale))
           color: {
-            if (root.engine.completedFocusSessions > index) return "#7dd3fc"
-            if (!root.engine.cycleHalted && root.engine.sessionNumber - 1 === index) return "#f4f4f8"
-            return "#3a3a44"
+            if (root.engine.completedFocusSessions > index) return theme.accent
+            if (!root.engine.cycleHalted && root.engine.sessionNumber - 1 === index)
+              return theme.textPrimary
+            return theme.line
           }
         }
       }
     }
 
-    PlainText {
-      id: promptLabel
+    ZenText {
       anchors.horizontalCenter: parent.horizontalCenter
       visible: root.engine.cycleHalted
       text: strings.t("pomodoro.cyclePrompt")
+      role: "label"
+      tone: "accent"
       opacity: root.hudFaded ? 0 : 1
       Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
+        NumberAnimation { duration: theme.duration; easing.type: Easing.OutCubic }
       }
-      font.pixelSize: 15
-      font.family: Style.font.family
-      color: "#7dd3fc"
     }
 
     Row {
-      id: controlsRow
       anchors.horizontalCenter: parent.horizontalCenter
-      spacing: 16
-      topPadding: 8
+      spacing: theme.space(12)
+      topPadding: theme.space(10)
       opacity: root.hudFaded ? 0 : 1
       Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
+        NumberAnimation { duration: theme.duration; easing.type: Easing.OutCubic }
       }
 
       HudButton {
@@ -168,7 +140,6 @@ Item {
         onActivity: root.activity()
         onClicked: root.engine.toggle()
       }
-
       HudButton {
         faded: root.hudFaded
         locked: root.actionLocked
@@ -176,7 +147,6 @@ Item {
         onActivity: root.activity()
         onClicked: root.engine.reset()
       }
-
       HudButton {
         faded: root.hudFaded
         locked: root.actionLocked
@@ -185,20 +155,6 @@ Item {
         onActivity: root.activity()
         onClicked: root.engine.skip()
       }
-    }
-
-    PlainText {
-      id: hintLabel
-      anchors.horizontalCenter: parent.horizontalCenter
-      text: strings.t("pomodoro.hint")
-      opacity: root.hudFaded ? 0 : 1
-      Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
-      }
-      font.pixelSize: 13
-      font.letterSpacing: 2
-      font.family: Style.font.family
-      color: "#55555f"
     }
   }
 }

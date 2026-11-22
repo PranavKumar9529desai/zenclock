@@ -12,9 +12,9 @@ Item {
   property bool hudFaded: false
   property bool actionLocked: false
 
-  // Raised on any pointer interaction so the owner can wake Zen Inactivity.
   signal activity()
 
+  ZenTheme { id: theme }
   Commons.Translations {
     id: strings
     directory: Qt.resolvedUrl("i18n")
@@ -30,64 +30,47 @@ Item {
 
   Column {
     anchors.centerIn: parent
-    spacing: 18
+    spacing: theme.space(20)
 
-    Row {
+    ZenText {
       anchors.horizontalCenter: parent.horizontalCenter
-      spacing: 14
+      text: strings.t("stopwatch.label")
+      role: "heading"
+      tone: root.engine.running ? "accent" : "secondary"
       opacity: root.hudFaded ? 0 : 1
       Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
-      }
-
-      PlainText {
-        anchors.verticalCenter: parent.verticalCenter
-        text: "⏱"
-        font.pixelSize: 24
-        font.family: Style.font.family
-        color: "#7dd3fc"
-      }
-      PlainText {
-        anchors.verticalCenter: parent.verticalCenter
-        text: strings.t("stopwatch.label")
-        font.pixelSize: 18
-        font.letterSpacing: 4
-        font.family: Style.font.family
-        color: "#7dd3fc"
+        NumberAnimation { duration: theme.duration; easing.type: Easing.OutCubic }
       }
     }
 
-    // Primary digits — never faded. The engine switches to HH:MM:SS past an hour.
-    PlainText {
+    // Primary digits are never faded. The engine switches to HH:MM:SS past an hour.
+    ZenText {
       anchors.horizontalCenter: parent.horizontalCenter
       text: root.engine.formattedTime
-      font.pixelSize: Math.min(root.width * 0.16, 280)
-      font.weight: Font.Light
-      font.family: Style.font.family
-      color: "#f4f4f8"
+      role: "hero"
+      size: theme.heroSize(root.width)
     }
 
-    PlainText {
+    ZenText {
       anchors.horizontalCenter: parent.horizontalCenter
       text: root.engine.running
         ? strings.t("stopwatch.status.running")
         : strings.t("stopwatch.status.idle")
+      role: "body"
+      tone: root.engine.running ? "accent" : "secondary"
       opacity: root.hudFaded ? 0 : 1
       Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
+        NumberAnimation { duration: theme.duration; easing.type: Easing.OutCubic }
       }
-      font.pixelSize: 18
-      font.family: Style.font.family
-      color: root.engine.running ? "#7dd3fc" : "#9a9aa6"
     }
 
     Row {
       anchors.horizontalCenter: parent.horizontalCenter
-      spacing: 16
-      topPadding: 8
+      spacing: theme.space(12)
+      topPadding: theme.space(10)
       opacity: root.hudFaded ? 0 : 1
       Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
+        NumberAnimation { duration: theme.duration; easing.type: Easing.OutCubic }
       }
 
       HudButton {
@@ -98,7 +81,6 @@ Item {
         onActivity: root.activity()
         onClicked: root.engine.toggle()
       }
-
       HudButton {
         faded: root.hudFaded
         locked: root.actionLocked
@@ -106,19 +88,6 @@ Item {
         onActivity: root.activity()
         onClicked: root.engine.reset()
       }
-    }
-
-    PlainText {
-      anchors.horizontalCenter: parent.horizontalCenter
-      text: strings.t("stopwatch.hint")
-      opacity: root.hudFaded ? 0 : 1
-      Behavior on opacity {
-        NumberAnimation { duration: Style.duration(root.hudFaded ? 120 : 180); easing.type: Easing.OutCubic }
-      }
-      font.pixelSize: 13
-      font.letterSpacing: 2
-      font.family: Style.font.family
-      color: "#55555f"
     }
   }
 }
