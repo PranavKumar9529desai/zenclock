@@ -18,9 +18,6 @@ Item {
   property int graceTimeout: 8000
   property int idleTimeout: 3000
 
-  // Secondary HUD group whose opacity is animated as a unit.
-  property Item target: null
-
   readonly property bool zenActive: root.active && !root.inGrace && root.zen
 
   property bool inGrace: false

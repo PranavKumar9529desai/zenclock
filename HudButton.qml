@@ -47,9 +47,13 @@ Rectangle {
     hoverEnabled: root.interactive
     enabled: root.interactive
     cursorShape: root.faded ? Qt.BlankCursor : Qt.PointingHandCursor
-    onPositionChanged: root.activity()
+    onEntered: root.activity()
     onClicked: {
-      root.activity()
+      // A click on an invisible control reveals the HUD without acting.
+      if (root.faded) {
+        root.activity()
+        return
+      }
       root.clicked()
     }
   }

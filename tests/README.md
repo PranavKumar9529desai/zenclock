@@ -49,6 +49,11 @@ production: the service simply forwards the engines' signals, so a V2 database
 adapter can connect at that seam. The test adapter reads the captured events
 with `zc_events` and asserts their type and metadata.
 
+`state()` also reports `hudOpacity`. The smoke test asserts the HUD is visible
+immediately after open and stays visible through the 8-second grace period;
+only after the 3-second idle timeout does it fade. A click on a faded control
+reveals the HUD without triggering the action.
+
 Synthetic pointer motion is not injected: this machine's Hyprland build cannot
 move the cursor without disturbing keyboard focus, so pointer-driven Zen wake
 is verified in code review. Keyboard wake is covered by the smoke test.

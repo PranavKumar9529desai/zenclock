@@ -38,15 +38,25 @@ check eq "chime availability is reported" \
 first_time="$(zc_field '.time')"
 check zc_wait_changed '.time' "$first_time" 10
 
-# Zen Inactivity: keyboard wake and pointer wake over a faded control.
-if zc_has_field zenActive; then
-  check zc_wait_field '.zenActive' true 15
+# Zen Inactivity: controls must be visible on open, and only fade after the
+# grace period plus idle timeout. The old smoke test checked only `zenActive`,
+# which let the open-into-Zen bug slip through.
+if zc_has_field hudOpacity; then
+  check eq "HUD is visible immediately on open" "$(zc_field '.hudOpacity')" "1"
+  sleep 4
+  check eq "HUD stays visible during grace period" "$(zc_field '.hudOpacity')" "1"
+  # Someone may dismiss the overlay from the desktop mid-wait; re-summon and
+  # retry rather than reporting a false failure.
+  zen_ok=0
+  for attempt in 1 2 3; do
+    zc_ensure_open
+    if zc_wait_field '.zenActive' true 15 >/dev/null 2>&1; then zen_ok=1; break; fi
+  done
+  check eq "HUD fades after grace + idle" "$zen_ok" "1"
+  check zc_wait_field '.hudOpacity' 0 10
   zc_press a
   check zc_wait_field '.zenActive' false 10
-  check zc_wait_field '.zenActive' true 15
-  # Pointer wake is wired through each MouseArea's onPositionChanged, but this
-  # machine's Hyprland build cannot inject synthetic pointer motion without
-  # disturbing keyboard focus, so it is verified by review rather than here.
+  check zc_wait_field '.hudOpacity' 1 10
   echo "SKIP pointer-wake check: no safe synthetic pointer injection"
 fi
 
