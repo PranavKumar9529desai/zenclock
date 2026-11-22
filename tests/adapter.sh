@@ -39,6 +39,23 @@ zc_key() {
   wtype -k "$1"
 }
 
+# Re-summon if another desktop action dismissed the overlay mid-test.
+zc_ensure_open() {
+  if [[ "$(zc_field '.opened' 2>/dev/null || true)" != "true" ]]; then
+    zc_toggle
+    sleep 0.7
+  fi
+}
+
+# Key press that is safe against an externally dismissed overlay.
+zc_press() {
+  zc_ensure_open
+  zc_key "$@"
+}
+
+# Event capture is test-only and off in production; the string needs unescaping.
+zc_events() { zc_call debugEventsJson '' | jq -r '.' 2>/dev/null || echo '[]'; }
+
 # Poll until a JSON field changes from its previous value.
 zc_wait_changed() {
   local filter="$1" previous="$2" attempts="${3:-15}" actual=""
